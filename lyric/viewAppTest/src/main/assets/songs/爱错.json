@@ -1,0 +1,2208 @@
+{
+  "musicId": "1134344911",
+  "name": "爱错",
+  "agents": [
+    {
+      "id": "v1",
+      "nameTypeNames": [
+        "Full"
+      ],
+      "nameTypes": [
+        1
+      ],
+      "type": 1,
+      "typeName": "Person"
+    }
+  ],
+  "artist": "王力宏",
+  "duration": 238000,
+  "lyrics": [
+    {
+      "secondaryWords": [],
+      "text": "北风毫不留情",
+      "words": [
+        {
+          "text": "北风",
+          "agent": "",
+          "begin": 14070,
+          "duration": 888,
+          "end": 14958
+        },
+        {
+          "text": "毫不",
+          "agent": "",
+          "begin": 14958,
+          "duration": 868,
+          "end": 15826
+        },
+        {
+          "text": "留",
+          "agent": "",
+          "begin": 15826,
+          "duration": 368,
+          "end": 16194
+        },
+        {
+          "text": "情",
+          "agent": "",
+          "begin": 16194,
+          "duration": 1163,
+          "end": 17357
+        }
+      ],
+      "agent": "v1",
+      "begin": 14070,
+      "duration": 3287,
+      "end": 17357
+    },
+    {
+      "secondaryWords": [],
+      "text": "把叶子吹落",
+      "words": [
+        {
+          "text": "把叶子",
+          "agent": "",
+          "begin": 18224,
+          "duration": 1345,
+          "end": 19569
+        },
+        {
+          "text": "吹",
+          "agent": "",
+          "begin": 19569,
+          "duration": 432,
+          "end": 20001
+        },
+        {
+          "text": "落",
+          "agent": "",
+          "begin": 20001,
+          "duration": 704,
+          "end": 20705
+        }
+      ],
+      "agent": "v1",
+      "begin": 18224,
+      "duration": 2481,
+      "end": 20705
+    },
+    {
+      "secondaryWords": [],
+      "text": "脆弱的她选择了逃脱",
+      "words": [
+        {
+          "text": "脆弱的她",
+          "agent": "",
+          "begin": 20715,
+          "duration": 1607,
+          "end": 22322
+        },
+        {
+          "text": "选",
+          "agent": "",
+          "begin": 22322,
+          "duration": 418,
+          "end": 22740
+        },
+        {
+          "text": "择",
+          "agent": "",
+          "begin": 22740,
+          "duration": 836,
+          "end": 23576
+        },
+        {
+          "text": "了",
+          "agent": "",
+          "begin": 23576,
+          "duration": 432,
+          "end": 24008
+        },
+        {
+          "text": "逃",
+          "agent": "",
+          "begin": 24008,
+          "duration": 418,
+          "end": 24426
+        },
+        {
+          "text": "脱",
+          "agent": "",
+          "begin": 24426,
+          "duration": 1477,
+          "end": 25903
+        }
+      ],
+      "agent": "v1",
+      "begin": 20715,
+      "duration": 5188,
+      "end": 25903
+    },
+    {
+      "secondaryWords": [],
+      "text": "叶子失去消息",
+      "words": [
+        {
+          "text": "叶子",
+          "agent": "",
+          "begin": 27305,
+          "duration": 871,
+          "end": 28176
+        },
+        {
+          "text": "失去",
+          "agent": "",
+          "begin": 28176,
+          "duration": 784,
+          "end": 28960
+        },
+        {
+          "text": "消",
+          "agent": "",
+          "begin": 28960,
+          "duration": 383,
+          "end": 29343
+        },
+        {
+          "text": "息",
+          "agent": "",
+          "begin": 29343,
+          "duration": 871,
+          "end": 30214
+        }
+      ],
+      "agent": "v1",
+      "begin": 27305,
+      "duration": 2909,
+      "end": 30214
+    },
+    {
+      "secondaryWords": [],
+      "text": "风才感觉寂寞",
+      "words": [
+        {
+          "text": "风才",
+          "agent": "",
+          "begin": 30247,
+          "duration": 826,
+          "end": 31073
+        },
+        {
+          "text": "感",
+          "agent": "",
+          "begin": 31073,
+          "duration": 833,
+          "end": 31906
+        },
+        {
+          "text": "觉",
+          "agent": "",
+          "begin": 31906,
+          "duration": 418,
+          "end": 32324
+        },
+        {
+          "text": "寂",
+          "agent": "",
+          "begin": 32324,
+          "duration": 433,
+          "end": 32757
+        },
+        {
+          "text": "寞",
+          "agent": "",
+          "begin": 32757,
+          "duration": 3080,
+          "end": 35837
+        }
+      ],
+      "agent": "v1",
+      "begin": 30247,
+      "duration": 5590,
+      "end": 35837
+    },
+    {
+      "secondaryWords": [],
+      "text": "整个冬天",
+      "words": [
+        {
+          "text": "整个",
+          "agent": "",
+          "begin": 36238,
+          "duration": 973,
+          "end": 37211
+        },
+        {
+          "text": "冬",
+          "agent": "",
+          "begin": 37211,
+          "duration": 383,
+          "end": 37594
+        },
+        {
+          "text": "天",
+          "agent": "",
+          "begin": 37594,
+          "duration": 1887,
+          "end": 39481
+        }
+      ],
+      "agent": "v1",
+      "begin": 36238,
+      "duration": 3243,
+      "end": 39481
+    },
+    {
+      "secondaryWords": [],
+      "text": "北风的痛没人能说",
+      "words": [
+        {
+          "text": "北风的痛",
+          "agent": "",
+          "begin": 39591,
+          "duration": 1787,
+          "end": 41378
+        },
+        {
+          "text": "没人",
+          "agent": "",
+          "begin": 41378,
+          "duration": 818,
+          "end": 42196
+        },
+        {
+          "text": "能",
+          "agent": "",
+          "begin": 42196,
+          "duration": 569,
+          "end": 42765
+        },
+        {
+          "text": "说",
+          "agent": "",
+          "begin": 42765,
+          "duration": 2945,
+          "end": 45710
+        }
+      ],
+      "agent": "v1",
+      "begin": 39591,
+      "duration": 6119,
+      "end": 45710
+    },
+    {
+      "secondaryWords": [],
+      "text": "我从来没想过",
+      "words": [
+        {
+          "text": "我",
+          "agent": "",
+          "begin": 45720,
+          "duration": 488,
+          "end": 46208
+        },
+        {
+          "text": "从来",
+          "agent": "",
+          "begin": 46208,
+          "duration": 885,
+          "end": 47093
+        },
+        {
+          "text": "没",
+          "agent": "",
+          "begin": 47093,
+          "duration": 334,
+          "end": 47427
+        },
+        {
+          "text": "想",
+          "agent": "",
+          "begin": 47427,
+          "duration": 868,
+          "end": 48295
+        },
+        {
+          "text": "过",
+          "agent": "",
+          "begin": 48295,
+          "duration": 1002,
+          "end": 49297
+        }
+      ],
+      "agent": "v1",
+      "begin": 45720,
+      "duration": 3577,
+      "end": 49297
+    },
+    {
+      "secondaryWords": [],
+      "text": "我会这样做",
+      "words": [
+        {
+          "text": "我会",
+          "agent": "",
+          "begin": 49463,
+          "duration": 879,
+          "end": 50342
+        },
+        {
+          "text": "这",
+          "agent": "",
+          "begin": 50342,
+          "duration": 369,
+          "end": 50711
+        },
+        {
+          "text": "样",
+          "agent": "",
+          "begin": 50711,
+          "duration": 833,
+          "end": 51544
+        },
+        {
+          "text": "做",
+          "agent": "",
+          "begin": 51544,
+          "duration": 1030,
+          "end": 52574
+        }
+      ],
+      "agent": "v1",
+      "begin": 49463,
+      "duration": 3111,
+      "end": 52574
+    },
+    {
+      "secondaryWords": [],
+      "text": "从来没爱过",
+      "words": [
+        {
+          "text": "从来",
+          "agent": "",
+          "begin": 52721,
+          "duration": 939,
+          "end": 53660
+        },
+        {
+          "text": "没",
+          "agent": "",
+          "begin": 53660,
+          "duration": 351,
+          "end": 54011
+        },
+        {
+          "text": "爱",
+          "agent": "",
+          "begin": 54011,
+          "duration": 801,
+          "end": 54812
+        },
+        {
+          "text": "过",
+          "agent": "",
+          "begin": 54812,
+          "duration": 1097,
+          "end": 55909
+        }
+      ],
+      "agent": "v1",
+      "begin": 52721,
+      "duration": 3188,
+      "end": 55909
+    },
+    {
+      "secondaryText": "所以愛錯",
+      "secondaryWords": [
+        {
+          "text": "所以",
+          "agent": "v1",
+          "begin": 57719,
+          "duration": 873,
+          "end": 58592
+        },
+        {
+          "text": "愛",
+          "agent": "v1",
+          "begin": 58592,
+          "duration": 334,
+          "end": 58926
+        },
+        {
+          "text": "錯",
+          "agent": "v1",
+          "begin": 58926,
+          "duration": 2627,
+          "end": 61553
+        }
+      ],
+      "text": "所以爱错 ",
+      "words": [
+        {
+          "text": "所以",
+          "agent": "",
+          "begin": 56024,
+          "duration": 892,
+          "end": 56916
+        },
+        {
+          "text": "爱",
+          "agent": "",
+          "begin": 56916,
+          "duration": 348,
+          "end": 57264
+        },
+        {
+          "text": "错",
+          "agent": "",
+          "begin": 57264,
+          "duration": 1425,
+          "end": 58689
+        },
+        {
+          "text": " ",
+          "agent": "",
+          "begin": -1,
+          "duration": 0,
+          "end": -1
+        }
+      ],
+      "agent": "v1",
+      "begin": 56024,
+      "duration": 5529,
+      "end": 61553
+    },
+    {
+      "secondaryWords": [],
+      "text": "我从哪里起飞",
+      "words": [
+        {
+          "text": "我从",
+          "agent": "",
+          "begin": 58947,
+          "duration": 850,
+          "end": 59797
+        },
+        {
+          "text": "哪里",
+          "agent": "",
+          "begin": 59797,
+          "duration": 801,
+          "end": 60598
+        },
+        {
+          "text": "起",
+          "agent": "",
+          "begin": 60598,
+          "duration": 749,
+          "end": 61347
+        },
+        {
+          "text": "飞",
+          "agent": "",
+          "begin": 61347,
+          "duration": 1187,
+          "end": 62534
+        }
+      ],
+      "agent": "v1",
+      "begin": 58947,
+      "duration": 3587,
+      "end": 62534
+    },
+    {
+      "secondaryWords": [],
+      "text": "从哪里降落",
+      "words": [
+        {
+          "text": "从哪里",
+          "agent": "",
+          "begin": 62586,
+          "duration": 1289,
+          "end": 63875
+        },
+        {
+          "text": "降",
+          "agent": "",
+          "begin": 63875,
+          "duration": 716,
+          "end": 64591
+        },
+        {
+          "text": "落",
+          "agent": "",
+          "begin": 64591,
+          "duration": 1167,
+          "end": 65758
+        }
+      ],
+      "agent": "v1",
+      "begin": 62586,
+      "duration": 3172,
+      "end": 65758
+    },
+    {
+      "secondaryWords": [],
+      "text": "多少不能原谅的错却不能重来过",
+      "words": [
+        {
+          "text": "多少",
+          "agent": "",
+          "begin": 65968,
+          "duration": 778,
+          "end": 66746
+        },
+        {
+          "text": "不能原谅的错",
+          "agent": "",
+          "begin": 66746,
+          "duration": 2403,
+          "end": 69149
+        },
+        {
+          "text": "却不能",
+          "agent": "",
+          "begin": 69149,
+          "duration": 1303,
+          "end": 70452
+        },
+        {
+          "text": "重",
+          "agent": "",
+          "begin": 70452,
+          "duration": 1047,
+          "end": 71499
+        },
+        {
+          "text": "来",
+          "agent": "",
+          "begin": 71686,
+          "duration": 833,
+          "end": 72519
+        },
+        {
+          "text": "过",
+          "agent": "",
+          "begin": 72519,
+          "duration": 3610,
+          "end": 76129
+        }
+      ],
+      "agent": "v1",
+      "begin": 65968,
+      "duration": 10161,
+      "end": 76129
+    },
+    {
+      "secondaryWords": [],
+      "text": "翻开回忆角落",
+      "words": [
+        {
+          "text": "翻开回忆",
+          "agent": "",
+          "begin": 79914,
+          "duration": 1687,
+          "end": 81601
+        },
+        {
+          "text": "角",
+          "agent": "",
+          "begin": 81601,
+          "duration": 351,
+          "end": 81952
+        },
+        {
+          "text": "落",
+          "agent": "",
+          "begin": 81952,
+          "duration": 1271,
+          "end": 83223
+        }
+      ],
+      "agent": "v1",
+      "begin": 79914,
+      "duration": 3309,
+      "end": 83223
+    },
+    {
+      "secondaryWords": [],
+      "text": "完美的生活",
+      "words": [
+        {
+          "text": "完美",
+          "agent": "",
+          "begin": 84007,
+          "duration": 884,
+          "end": 84891
+        },
+        {
+          "text": "的",
+          "agent": "",
+          "begin": 84891,
+          "duration": 351,
+          "end": 85242
+        },
+        {
+          "text": "生",
+          "agent": "",
+          "begin": 85242,
+          "duration": 383,
+          "end": 85625
+        },
+        {
+          "text": "活",
+          "agent": "",
+          "begin": 85625,
+          "duration": 744,
+          "end": 86369
+        }
+      ],
+      "agent": "v1",
+      "begin": 84007,
+      "duration": 2362,
+      "end": 86369
+    },
+    {
+      "secondaryWords": [],
+      "text": "以为幸福都可以掌握",
+      "words": [
+        {
+          "text": "以为幸福都",
+          "agent": "",
+          "begin": 86479,
+          "duration": 2081,
+          "end": 88560
+        },
+        {
+          "text": "可",
+          "agent": "",
+          "begin": 88560,
+          "duration": 850,
+          "end": 89410
+        },
+        {
+          "text": "以",
+          "agent": "",
+          "begin": 89410,
+          "duration": 352,
+          "end": 89762
+        },
+        {
+          "text": "掌",
+          "agent": "",
+          "begin": 89762,
+          "duration": 383,
+          "end": 90145
+        },
+        {
+          "text": "握",
+          "agent": "",
+          "begin": 90145,
+          "duration": 1547,
+          "end": 91692
+        }
+      ],
+      "agent": "v1",
+      "begin": 86479,
+      "duration": 5213,
+      "end": 91692
+    },
+    {
+      "secondaryWords": [],
+      "text": "仔细回味当初那个故事背后",
+      "words": [
+        {
+          "text": "仔细回味",
+          "agent": "",
+          "begin": 92993,
+          "duration": 1734,
+          "end": 94727
+        },
+        {
+          "text": "当",
+          "agent": "",
+          "begin": 94727,
+          "duration": 351,
+          "end": 95078
+        },
+        {
+          "text": "初",
+          "agent": "",
+          "begin": 95078,
+          "duration": 824,
+          "end": 95902
+        },
+        {
+          "text": "那个",
+          "agent": "",
+          "begin": 96036,
+          "duration": 693,
+          "end": 96729
+        },
+        {
+          "text": "故",
+          "agent": "",
+          "begin": 96729,
+          "duration": 836,
+          "end": 97565
+        },
+        {
+          "text": "事",
+          "agent": "",
+          "begin": 97565,
+          "duration": 383,
+          "end": 97948
+        },
+        {
+          "text": "背",
+          "agent": "",
+          "begin": 97948,
+          "duration": 418,
+          "end": 98366
+        },
+        {
+          "text": "后",
+          "agent": "",
+          "begin": 98366,
+          "duration": 3227,
+          "end": 101593
+        }
+      ],
+      "agent": "v1",
+      "begin": 92993,
+      "duration": 8600,
+      "end": 101593
+    },
+    {
+      "secondaryText": "原來是我",
+      "secondaryWords": [
+        {
+          "text": "原來",
+          "agent": "v1",
+          "begin": 103805,
+          "duration": 768,
+          "end": 104573
+        },
+        {
+          "text": "是",
+          "agent": "v1",
+          "begin": 104573,
+          "duration": 400,
+          "end": 104973
+        },
+        {
+          "text": "我",
+          "agent": "v1",
+          "begin": 104973,
+          "duration": 3354,
+          "end": 108327
+        }
+      ],
+      "text": "Oh 原来是我 ",
+      "words": [
+        {
+          "text": "Oh",
+          "agent": "",
+          "begin": 101666,
+          "duration": 437,
+          "end": 102103
+        },
+        {
+          "text": " ",
+          "agent": "",
+          "begin": -1,
+          "duration": 0,
+          "end": -1
+        },
+        {
+          "text": "原来",
+          "agent": "",
+          "begin": 102103,
+          "duration": 784,
+          "end": 102887
+        },
+        {
+          "text": "是",
+          "agent": "",
+          "begin": 102887,
+          "duration": 401,
+          "end": 103288
+        },
+        {
+          "text": "我",
+          "agent": "",
+          "begin": 103288,
+          "duration": 2090,
+          "end": 105378
+        },
+        {
+          "text": " ",
+          "agent": "",
+          "begin": -1,
+          "duration": 0,
+          "end": -1
+        }
+      ],
+      "agent": "v1",
+      "begin": 101666,
+      "duration": 6661,
+      "end": 108327
+    },
+    {
+      "secondaryWords": [],
+      "text": "犯下从没承认的错",
+      "words": [
+        {
+          "text": "犯下从没",
+          "agent": "",
+          "begin": 105391,
+          "duration": 1632,
+          "end": 107023
+        },
+        {
+          "text": "承认",
+          "agent": "",
+          "begin": 107023,
+          "duration": 868,
+          "end": 107891
+        },
+        {
+          "text": "的",
+          "agent": "",
+          "begin": 107891,
+          "duration": 383,
+          "end": 108274
+        },
+        {
+          "text": "错",
+          "agent": "",
+          "begin": 108274,
+          "duration": 3080,
+          "end": 111354
+        }
+      ],
+      "agent": "v1",
+      "begin": 105391,
+      "duration": 5963,
+      "end": 111354
+    },
+    {
+      "secondaryWords": [],
+      "text": "我从来没想过",
+      "words": [
+        {
+          "text": "我",
+          "agent": "",
+          "begin": 111464,
+          "duration": 474,
+          "end": 111938
+        },
+        {
+          "text": "从来",
+          "agent": "",
+          "begin": 111938,
+          "duration": 833,
+          "end": 112771
+        },
+        {
+          "text": "没",
+          "agent": "",
+          "begin": 112771,
+          "duration": 401,
+          "end": 113172
+        },
+        {
+          "text": "想",
+          "agent": "",
+          "begin": 113172,
+          "duration": 783,
+          "end": 113955
+        },
+        {
+          "text": "过",
+          "agent": "",
+          "begin": 113955,
+          "duration": 1096,
+          "end": 115051
+        }
+      ],
+      "agent": "v1",
+      "begin": 111464,
+      "duration": 3587,
+      "end": 115051
+    },
+    {
+      "secondaryWords": [],
+      "text": "我会这样做",
+      "words": [
+        {
+          "text": "我会",
+          "agent": "",
+          "begin": 115246,
+          "duration": 814,
+          "end": 116060
+        },
+        {
+          "text": "这",
+          "agent": "",
+          "begin": 116060,
+          "duration": 369,
+          "end": 116429
+        },
+        {
+          "text": "样",
+          "agent": "",
+          "begin": 116429,
+          "duration": 766,
+          "end": 117195
+        },
+        {
+          "text": "做",
+          "agent": "",
+          "begin": 117195,
+          "duration": 1059,
+          "end": 118254
+        }
+      ],
+      "agent": "v1",
+      "begin": 115246,
+      "duration": 3008,
+      "end": 118254
+    },
+    {
+      "secondaryWords": [],
+      "text": "从来没爱过",
+      "words": [
+        {
+          "text": "从来",
+          "agent": "",
+          "begin": 118522,
+          "duration": 810,
+          "end": 119332
+        },
+        {
+          "text": "没",
+          "agent": "",
+          "begin": 119332,
+          "duration": 432,
+          "end": 119764
+        },
+        {
+          "text": "爱",
+          "agent": "",
+          "begin": 119764,
+          "duration": 819,
+          "end": 120583
+        },
+        {
+          "text": "过",
+          "agent": "",
+          "begin": 120583,
+          "duration": 1025,
+          "end": 121608
+        }
+      ],
+      "agent": "v1",
+      "begin": 118522,
+      "duration": 3086,
+      "end": 121608
+    },
+    {
+      "secondaryWords": [],
+      "text": "所以爱错",
+      "words": [
+        {
+          "text": "所以",
+          "agent": "",
+          "begin": 121756,
+          "duration": 883,
+          "end": 122639
+        },
+        {
+          "text": "爱",
+          "agent": "",
+          "begin": 122639,
+          "duration": 386,
+          "end": 123025
+        },
+        {
+          "text": "错",
+          "agent": "",
+          "begin": 123025,
+          "duration": 1696,
+          "end": 124721
+        }
+      ],
+      "agent": "v1",
+      "begin": 121756,
+      "duration": 2965,
+      "end": 124721
+    },
+    {
+      "secondaryWords": [],
+      "text": "我从哪里起飞",
+      "words": [
+        {
+          "text": "我从",
+          "agent": "",
+          "begin": 124731,
+          "duration": 807,
+          "end": 125538
+        },
+        {
+          "text": "哪里",
+          "agent": "",
+          "begin": 125538,
+          "duration": 720,
+          "end": 126258
+        },
+        {
+          "text": "起",
+          "agent": "",
+          "begin": 126258,
+          "duration": 784,
+          "end": 127042
+        },
+        {
+          "text": "飞",
+          "agent": "",
+          "begin": 127042,
+          "duration": 1033,
+          "end": 128075
+        }
+      ],
+      "agent": "v1",
+      "begin": 124731,
+      "duration": 3344,
+      "end": 128075
+    },
+    {
+      "secondaryWords": [],
+      "text": "从哪里降落",
+      "words": [
+        {
+          "text": "从哪里",
+          "agent": "",
+          "begin": 128285,
+          "duration": 1382,
+          "end": 129667
+        },
+        {
+          "text": "降",
+          "agent": "",
+          "begin": 129667,
+          "duration": 702,
+          "end": 130369
+        },
+        {
+          "text": "落",
+          "agent": "",
+          "begin": 130369,
+          "duration": 1027,
+          "end": 131396
+        }
+      ],
+      "agent": "v1",
+      "begin": 128285,
+      "duration": 3111,
+      "end": 131396
+    },
+    {
+      "secondaryWords": [],
+      "text": "多少不能原谅的错却不能重来过",
+      "words": [
+        {
+          "text": "多少",
+          "agent": "",
+          "begin": 131671,
+          "duration": 821,
+          "end": 132492
+        },
+        {
+          "text": "不能原谅的错",
+          "agent": "",
+          "begin": 132492,
+          "duration": 2470,
+          "end": 134962
+        },
+        {
+          "text": "却不能",
+          "agent": "",
+          "begin": 134962,
+          "duration": 1268,
+          "end": 136230
+        },
+        {
+          "text": "重",
+          "agent": "",
+          "begin": 136230,
+          "duration": 1185,
+          "end": 137415
+        },
+        {
+          "text": "来",
+          "agent": "",
+          "begin": 137415,
+          "duration": 801,
+          "end": 138216
+        },
+        {
+          "text": "过",
+          "agent": "",
+          "begin": 138216,
+          "duration": 3335,
+          "end": 141551
+        }
+      ],
+      "agent": "v1",
+      "begin": 131671,
+      "duration": 9880,
+      "end": 141551
+    },
+    {
+      "secondaryWords": [],
+      "text": "在这少了你的世界",
+      "words": [
+        {
+          "text": "在这",
+          "agent": "",
+          "begin": 142626,
+          "duration": 520,
+          "end": 143146
+        },
+        {
+          "text": "少",
+          "agent": "",
+          "begin": 143146,
+          "duration": 601,
+          "end": 143747
+        },
+        {
+          "text": "了",
+          "agent": "",
+          "begin": 143747,
+          "duration": 235,
+          "end": 143982
+        },
+        {
+          "text": "你",
+          "agent": "",
+          "begin": 143982,
+          "duration": 566,
+          "end": 144548
+        },
+        {
+          "text": "的",
+          "agent": "",
+          "begin": 144548,
+          "duration": 218,
+          "end": 144766
+        },
+        {
+          "text": "世",
+          "agent": "",
+          "begin": 144766,
+          "duration": 517,
+          "end": 145283
+        },
+        {
+          "text": "界",
+          "agent": "",
+          "begin": 145283,
+          "duration": 1831,
+          "end": 147114
+        }
+      ],
+      "agent": "v1",
+      "begin": 142626,
+      "duration": 4488,
+      "end": 147114
+    },
+    {
+      "secondaryText": "其實我不想",
+      "secondaryWords": [
+        {
+          "text": "其",
+          "agent": "v1",
+          "begin": 151466,
+          "duration": 734,
+          "end": 152200
+        },
+        {
+          "text": "實",
+          "agent": "v1",
+          "begin": 152200,
+          "duration": 784,
+          "end": 152984
+        },
+        {
+          "text": "我",
+          "agent": "v1",
+          "begin": 152984,
+          "duration": 962,
+          "end": 153946
+        },
+        {
+          "text": "不",
+          "agent": "v1",
+          "begin": 153946,
+          "duration": 384,
+          "end": 154330
+        },
+        {
+          "text": "想",
+          "agent": "v1",
+          "begin": 154330,
+          "duration": 2509,
+          "end": 156839
+        }
+      ],
+      "text": "找不回那些感觉 ",
+      "words": [
+        {
+          "text": "找不",
+          "agent": "",
+          "begin": 149278,
+          "duration": 526,
+          "end": 149804
+        },
+        {
+          "text": "回",
+          "agent": "",
+          "begin": 149804,
+          "duration": 415,
+          "end": 150219
+        },
+        {
+          "text": "那",
+          "agent": "",
+          "begin": 150219,
+          "duration": 285,
+          "end": 150504
+        },
+        {
+          "text": "些",
+          "agent": "",
+          "begin": 150504,
+          "duration": 485,
+          "end": 150989
+        },
+        {
+          "text": "感",
+          "agent": "",
+          "begin": 150989,
+          "duration": 618,
+          "end": 151607
+        },
+        {
+          "text": "觉",
+          "agent": "",
+          "begin": 151607,
+          "duration": 1976,
+          "end": 153583
+        },
+        {
+          "text": " ",
+          "agent": "",
+          "begin": -1,
+          "duration": 0,
+          "end": -1
+        }
+      ],
+      "agent": "v1",
+      "begin": 149278,
+      "duration": 7561,
+      "end": 156839
+    },
+    {
+      "secondaryText": "道別",
+      "secondaryWords": [
+        {
+          "text": "道",
+          "agent": "v1",
+          "begin": 158762,
+          "duration": 501,
+          "end": 159263
+        },
+        {
+          "text": "別",
+          "agent": "v1",
+          "begin": 159263,
+          "duration": 1519,
+          "end": 160782
+        }
+      ],
+      "text": "其实我不想道别 ",
+      "words": [
+        {
+          "text": "其实",
+          "agent": "",
+          "begin": 153906,
+          "duration": 791,
+          "end": 154697
+        },
+        {
+          "text": "我",
+          "agent": "",
+          "begin": 154697,
+          "duration": 833,
+          "end": 155530
+        },
+        {
+          "text": "不",
+          "agent": "",
+          "begin": 155530,
+          "duration": 366,
+          "end": 155896
+        },
+        {
+          "text": "想",
+          "agent": "",
+          "begin": 155896,
+          "duration": 1321,
+          "end": 157217
+        },
+        {
+          "text": "道",
+          "agent": "",
+          "begin": 157217,
+          "duration": 365,
+          "end": 157582
+        },
+        {
+          "text": "别",
+          "agent": "",
+          "begin": 157582,
+          "duration": 2121,
+          "end": 159703
+        },
+        {
+          "text": " ",
+          "agent": "",
+          "begin": -1,
+          "duration": 0,
+          "end": -1
+        }
+      ],
+      "agent": "v1",
+      "begin": 153906,
+      "duration": 6876,
+      "end": 160782
+    },
+    {
+      "secondaryWords": [],
+      "text": "那些过去",
+      "words": [
+        {
+          "text": "那些",
+          "agent": "",
+          "begin": 161193,
+          "duration": 918,
+          "end": 162111
+        },
+        {
+          "text": "过",
+          "agent": "",
+          "begin": 162111,
+          "duration": 365,
+          "end": 162476
+        },
+        {
+          "text": "去",
+          "agent": "",
+          "begin": 162476,
+          "duration": 1019,
+          "end": 163495
+        }
+      ],
+      "agent": "v1",
+      "begin": 161193,
+      "duration": 2302,
+      "end": 163495
+    },
+    {
+      "secondaryWords": [],
+      "text": "我从来没想过",
+      "words": [
+        {
+          "text": "我",
+          "agent": "",
+          "begin": 163813,
+          "duration": 719,
+          "end": 164532
+        },
+        {
+          "text": "从来没",
+          "agent": "",
+          "begin": 164532,
+          "duration": 1283,
+          "end": 165815
+        },
+        {
+          "text": "想",
+          "agent": "",
+          "begin": 165815,
+          "duration": 734,
+          "end": 166549
+        },
+        {
+          "text": "过",
+          "agent": "",
+          "begin": 166549,
+          "duration": 1068,
+          "end": 167617
+        }
+      ],
+      "agent": "v1",
+      "begin": 163813,
+      "duration": 3804,
+      "end": 167617
+    },
+    {
+      "secondaryWords": [],
+      "text": "我会这样做",
+      "words": [
+        {
+          "text": "我会",
+          "agent": "",
+          "begin": 167856,
+          "duration": 825,
+          "end": 168681
+        },
+        {
+          "text": "这",
+          "agent": "",
+          "begin": 168681,
+          "duration": 400,
+          "end": 169081
+        },
+        {
+          "text": "样",
+          "agent": "",
+          "begin": 169081,
+          "duration": 850,
+          "end": 169931
+        },
+        {
+          "text": "做",
+          "agent": "",
+          "begin": 169931,
+          "duration": 942,
+          "end": 170873
+        }
+      ],
+      "agent": "v1",
+      "begin": 167856,
+      "duration": 3017,
+      "end": 170873
+    },
+    {
+      "secondaryWords": [],
+      "text": "从来没爱过",
+      "words": [
+        {
+          "text": "从来没",
+          "agent": "",
+          "begin": 171166,
+          "duration": 1234,
+          "end": 172400
+        },
+        {
+          "text": "爱",
+          "agent": "",
+          "begin": 172400,
+          "duration": 702,
+          "end": 173102
+        },
+        {
+          "text": "过",
+          "agent": "",
+          "begin": 173102,
+          "duration": 967,
+          "end": 174069
+        }
+      ],
+      "agent": "v1",
+      "begin": 171166,
+      "duration": 2903,
+      "end": 174069
+    },
+    {
+      "secondaryWords": [],
+      "text": "从来没有爱过那么认真",
+      "words": [
+        {
+          "text": "从",
+          "agent": "",
+          "begin": 174322,
+          "duration": 652,
+          "end": 174974
+        },
+        {
+          "text": "来",
+          "agent": "",
+          "begin": 174974,
+          "duration": 232,
+          "end": 175206
+        },
+        {
+          "text": "没有",
+          "agent": "",
+          "begin": 175206,
+          "duration": 836,
+          "end": 176042
+        },
+        {
+          "text": "爱",
+          "agent": "",
+          "begin": 176042,
+          "duration": 366,
+          "end": 176408
+        },
+        {
+          "text": "过",
+          "agent": "",
+          "begin": 176408,
+          "duration": 418,
+          "end": 176826
+        },
+        {
+          "text": "那",
+          "agent": "",
+          "begin": 176826,
+          "duration": 217,
+          "end": 177043
+        },
+        {
+          "text": "么",
+          "agent": "",
+          "begin": 177043,
+          "duration": 485,
+          "end": 177528
+        },
+        {
+          "text": "认",
+          "agent": "",
+          "begin": 177528,
+          "duration": 415,
+          "end": 177943
+        },
+        {
+          "text": "真",
+          "agent": "",
+          "begin": 177943,
+          "duration": 2275,
+          "end": 180218
+        }
+      ],
+      "agent": "v1",
+      "begin": 174322,
+      "duration": 5896,
+      "end": 180218
+    },
+    {
+      "secondaryWords": [],
+      "text": "所以爱错",
+      "words": [
+        {
+          "text": "所以",
+          "agent": "",
+          "begin": 174388,
+          "duration": 838,
+          "end": 175226
+        },
+        {
+          "text": "爱",
+          "agent": "",
+          "begin": 175226,
+          "duration": 369,
+          "end": 175595
+        },
+        {
+          "text": "错",
+          "agent": "",
+          "begin": 175595,
+          "duration": 1797,
+          "end": 177392
+        }
+      ],
+      "agent": "v1",
+      "begin": 174388,
+      "duration": 3004,
+      "end": 177392
+    },
+    {
+      "secondaryWords": [],
+      "text": "我从哪里起飞",
+      "words": [
+        {
+          "text": "我从",
+          "agent": "",
+          "begin": 177265,
+          "duration": 873,
+          "end": 178138
+        },
+        {
+          "text": "哪里",
+          "agent": "",
+          "begin": 178138,
+          "duration": 752,
+          "end": 178890
+        },
+        {
+          "text": "起",
+          "agent": "",
+          "begin": 178890,
+          "duration": 717,
+          "end": 179607
+        },
+        {
+          "text": "飞",
+          "agent": "",
+          "begin": 179607,
+          "duration": 938,
+          "end": 180545
+        }
+      ],
+      "agent": "v1",
+      "begin": 177265,
+      "duration": 3280,
+      "end": 180545
+    },
+    {
+      "secondaryWords": [],
+      "text": "从哪里",
+      "words": [
+        {
+          "text": "从哪里",
+          "agent": "",
+          "begin": 180575,
+          "duration": 1484,
+          "end": 182059
+        }
+      ],
+      "agent": "v1",
+      "begin": 180575,
+      "duration": 1484,
+      "end": 182059
+    },
+    {
+      "secondaryWords": [],
+      "text": "从哪里降落",
+      "words": [
+        {
+          "text": "从哪里",
+          "agent": "",
+          "begin": 180923,
+          "duration": 1351,
+          "end": 182274
+        },
+        {
+          "text": "降",
+          "agent": "",
+          "begin": 182274,
+          "duration": 685,
+          "end": 182959
+        },
+        {
+          "text": "落",
+          "agent": "",
+          "begin": 182959,
+          "duration": 3968,
+          "end": 186927
+        }
+      ],
+      "agent": "v1",
+      "begin": 180923,
+      "duration": 6004,
+      "end": 186927
+    },
+    {
+      "secondaryWords": [],
+      "text": "降落",
+      "words": [
+        {
+          "text": "降",
+          "agent": "",
+          "begin": 183532,
+          "duration": 783,
+          "end": 184315
+        },
+        {
+          "text": "落",
+          "agent": "",
+          "begin": 184315,
+          "duration": 2789,
+          "end": 187104
+        }
+      ],
+      "agent": "v1",
+      "begin": 183532,
+      "duration": 3572,
+      "end": 187104
+    },
+    {
+      "secondaryWords": [],
+      "text": "多少不能原谅的错却不能重",
+      "words": [
+        {
+          "text": "多少不能",
+          "agent": "",
+          "begin": 184271,
+          "duration": 1619,
+          "end": 185890
+        },
+        {
+          "text": "原谅的错",
+          "agent": "",
+          "begin": 185890,
+          "duration": 1651,
+          "end": 187541
+        },
+        {
+          "text": "却",
+          "agent": "",
+          "begin": 187541,
+          "duration": 386,
+          "end": 187927
+        },
+        {
+          "text": "不",
+          "agent": "",
+          "begin": 187927,
+          "duration": 383,
+          "end": 188310
+        },
+        {
+          "text": "能",
+          "agent": "",
+          "begin": 188310,
+          "duration": 401,
+          "end": 188711
+        },
+        {
+          "text": "重",
+          "agent": "",
+          "begin": 188711,
+          "duration": 1249,
+          "end": 189960
+        }
+      ],
+      "agent": "v1",
+      "begin": 184271,
+      "duration": 5689,
+      "end": 189960
+    },
+    {
+      "secondaryWords": [],
+      "text": "我从来没想过",
+      "words": [
+        {
+          "text": "我",
+          "agent": "",
+          "begin": 190290,
+          "duration": 725,
+          "end": 191015
+        },
+        {
+          "text": "从来没",
+          "agent": "",
+          "begin": 191015,
+          "duration": 1083,
+          "end": 192098
+        },
+        {
+          "text": "想",
+          "agent": "",
+          "begin": 192098,
+          "duration": 702,
+          "end": 192800
+        },
+        {
+          "text": "过",
+          "agent": "",
+          "begin": 192800,
+          "duration": 1263,
+          "end": 194063
+        }
+      ],
+      "agent": "v1",
+      "begin": 190290,
+      "duration": 3773,
+      "end": 194063
+    },
+    {
+      "secondaryWords": [],
+      "text": "我会这样做",
+      "words": [
+        {
+          "text": "我会",
+          "agent": "",
+          "begin": 194217,
+          "duration": 800,
+          "end": 195017
+        },
+        {
+          "text": "这",
+          "agent": "",
+          "begin": 195017,
+          "duration": 348,
+          "end": 195365
+        },
+        {
+          "text": "样",
+          "agent": "",
+          "begin": 195365,
+          "duration": 801,
+          "end": 196166
+        },
+        {
+          "text": "做",
+          "agent": "",
+          "begin": 196166,
+          "duration": 955,
+          "end": 197121
+        }
+      ],
+      "agent": "v1",
+      "begin": 194217,
+      "duration": 2904,
+      "end": 197121
+    },
+    {
+      "secondaryWords": [],
+      "text": "从来没爱过",
+      "words": [
+        {
+          "text": "从来没",
+          "agent": "",
+          "begin": 197510,
+          "duration": 1212,
+          "end": 198722
+        },
+        {
+          "text": "爱",
+          "agent": "",
+          "begin": 198722,
+          "duration": 632,
+          "end": 199354
+        },
+        {
+          "text": "过",
+          "agent": "",
+          "begin": 199354,
+          "duration": 1159,
+          "end": 200513
+        }
+      ],
+      "agent": "v1",
+      "begin": 197510,
+      "duration": 3003,
+      "end": 200513
+    },
+    {
+      "secondaryWords": [],
+      "text": "爱过",
+      "words": [
+        {
+          "text": "爱",
+          "agent": "",
+          "begin": 199853,
+          "duration": 998,
+          "end": 200851
+        },
+        {
+          "text": "过",
+          "agent": "",
+          "begin": 200851,
+          "duration": 1144,
+          "end": 201995
+        }
+      ],
+      "agent": "v1",
+      "begin": 199853,
+      "duration": 2142,
+      "end": 201995
+    },
+    {
+      "secondaryWords": [],
+      "text": "所以爱错",
+      "words": [
+        {
+          "text": "所以",
+          "agent": "",
+          "begin": 200643,
+          "duration": 854,
+          "end": 201497
+        },
+        {
+          "text": "爱",
+          "agent": "",
+          "begin": 201497,
+          "duration": 383,
+          "end": 201880
+        },
+        {
+          "text": "错",
+          "agent": "",
+          "begin": 201880,
+          "duration": 1796,
+          "end": 203676
+        }
+      ],
+      "agent": "v1",
+      "begin": 200643,
+      "duration": 3033,
+      "end": 203676
+    },
+    {
+      "secondaryWords": [],
+      "text": "所以爱错",
+      "words": [
+        {
+          "text": "所以",
+          "agent": "",
+          "begin": 202361,
+          "duration": 820,
+          "end": 203181
+        },
+        {
+          "text": "爱",
+          "agent": "",
+          "begin": 203181,
+          "duration": 383,
+          "end": 203564
+        },
+        {
+          "text": "错",
+          "agent": "",
+          "begin": 203564,
+          "duration": 2402,
+          "end": 205966
+        }
+      ],
+      "agent": "v1",
+      "begin": 202361,
+      "duration": 3605,
+      "end": 205966
+    },
+    {
+      "secondaryWords": [],
+      "text": "我从哪里起飞",
+      "words": [
+        {
+          "text": "我从",
+          "agent": "",
+          "begin": 203709,
+          "duration": 787,
+          "end": 204496
+        },
+        {
+          "text": "哪里",
+          "agent": "",
+          "begin": 204496,
+          "duration": 667,
+          "end": 205163
+        },
+        {
+          "text": "起",
+          "agent": "",
+          "begin": 205163,
+          "duration": 732,
+          "end": 205895
+        },
+        {
+          "text": "飞",
+          "agent": "",
+          "begin": 205895,
+          "duration": 1117,
+          "end": 207012
+        }
+      ],
+      "agent": "v1",
+      "begin": 203709,
+      "duration": 3303,
+      "end": 207012
+    },
+    {
+      "secondaryWords": [],
+      "text": "爱错爱错爱错baby",
+      "words": [
+        {
+          "text": "爱",
+          "agent": "",
+          "begin": 206346,
+          "duration": 559,
+          "end": 206905
+        },
+        {
+          "text": "错",
+          "agent": "",
+          "begin": 206905,
+          "duration": 892,
+          "end": 207797
+        },
+        {
+          "text": "爱",
+          "agent": "",
+          "begin": 207797,
+          "duration": 299,
+          "end": 208096
+        },
+        {
+          "text": "错",
+          "agent": "",
+          "begin": 208096,
+          "duration": 871,
+          "end": 208967
+        },
+        {
+          "text": "爱",
+          "agent": "",
+          "begin": 208967,
+          "duration": 418,
+          "end": 209385
+        },
+        {
+          "text": "错",
+          "agent": "",
+          "begin": 209385,
+          "duration": 401,
+          "end": 209786
+        },
+        {
+          "text": "ba",
+          "agent": "",
+          "begin": 209786,
+          "duration": 400,
+          "end": 210186
+        },
+        {
+          "text": "by",
+          "agent": "",
+          "begin": 210186,
+          "duration": 749,
+          "end": 210935
+        }
+      ],
+      "agent": "v1",
+      "begin": 206346,
+      "duration": 4589,
+      "end": 210935
+    },
+    {
+      "secondaryWords": [],
+      "text": "从哪里降落",
+      "words": [
+        {
+          "text": "从哪里",
+          "agent": "",
+          "begin": 207242,
+          "duration": 1268,
+          "end": 208510
+        },
+        {
+          "text": "降",
+          "agent": "",
+          "begin": 208510,
+          "duration": 683,
+          "end": 209193
+        },
+        {
+          "text": "落",
+          "agent": "",
+          "begin": 209193,
+          "duration": 944,
+          "end": 210137
+        }
+      ],
+      "agent": "v1",
+      "begin": 207242,
+      "duration": 2895,
+      "end": 210137
+    },
+    {
+      "secondaryWords": [],
+      "text": "多少不能原谅的错",
+      "words": [
+        {
+          "text": "多少不能",
+          "agent": "",
+          "begin": 210616,
+          "duration": 1632,
+          "end": 212248
+        },
+        {
+          "text": "原谅",
+          "agent": "",
+          "begin": 212248,
+          "duration": 818,
+          "end": 213066
+        },
+        {
+          "text": "的",
+          "agent": "",
+          "begin": 213066,
+          "duration": 349,
+          "end": 213415
+        },
+        {
+          "text": "错",
+          "agent": "",
+          "begin": 213415,
+          "duration": 562,
+          "end": 213977
+        }
+      ],
+      "agent": "v1",
+      "begin": 210616,
+      "duration": 3361,
+      "end": 213977
+    },
+    {
+      "secondaryWords": [],
+      "text": "请你原谅我的爱错",
+      "words": [
+        {
+          "text": "请你原谅",
+          "agent": "",
+          "begin": 213006,
+          "duration": 1698,
+          "end": 214704
+        },
+        {
+          "text": "我",
+          "agent": "",
+          "begin": 214704,
+          "duration": 418,
+          "end": 215122
+        },
+        {
+          "text": "的",
+          "agent": "",
+          "begin": 215122,
+          "duration": 1022,
+          "end": 216144
+        },
+        {
+          "text": "爱",
+          "agent": "",
+          "begin": 216444,
+          "duration": 734,
+          "end": 217178
+        },
+        {
+          "text": "错",
+          "agent": "",
+          "begin": 217178,
+          "duration": 9100,
+          "end": 226278
+        }
+      ],
+      "agent": "v1",
+      "begin": 213006,
+      "duration": 13272,
+      "end": 226278
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  ~ Copyright 2026 Proify, Tomakino
+  ~ Licensed under the Apache License, Version 2.0
+  ~ http://www.apache.org/licenses/LICENSE-2.0
+  -->
+
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center"
+    android:orientation="vertical">
+
+    <io.github.proify.lyricon.lyric.view.line.LyricLineView
+        android:id="@+id/line"
+        android:layout_width="150dp"
+        android:layout_height="wrap_content" />
+
+</LinearLayout>

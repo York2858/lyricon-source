@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  ~ Copyright 2026 Proify, Tomakino
+  ~ Licensed under the Apache License, Version 2.0
+  ~ http://www.apache.org/licenses/LICENSE-2.0
+  -->
+
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?colorPrimaryFixed"
+    android:orientation="vertical"
+    tools:context=".MainActivity">
+
+    <com.google.android.material.card.MaterialCardView
+        style="?materialCardViewElevatedStyle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fitsSystemWindows="true"
+        app:cardBackgroundColor="?colorPrimaryInverse">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+    </com.google.android.material.card.MaterialCardView>
+
+    <!--    <Button-->
+    <!--        android:id="@+id/testMarquee"-->
+    <!--        android:layout_width="wrap_content"-->
+    <!--        android:layout_height="wrap_content" />-->
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/marqueeTest"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/marqueeTest" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/sendText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/send_text" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/toggle_tran"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:text="@string/toggle_trans" />
+
+    </LinearLayout>
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/scrollView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fadingEdgeLength="0dp"
+        android:fillViewport="true"
+        android:requiresFadingEdge="vertical">
+
+        <io.github.proify.lyricon.lyric.view.LyricPlayerView
+            android:id="@+id/lyric"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingHorizontal="32dp"
+            android:paddingTop="16dp"
+            android:paddingBottom="16dp" />
+
+    </androidx.core.widget.NestedScrollView>
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/card"
+        style="?materialCardViewElevatedStyle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:layout_margin="0dp"
+        app:cardBackgroundColor="?colorPrimaryInverse">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/slider"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp" />
+
+            <RelativeLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/time"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_centerHorizontal="true"
+                    android:textIsSelectable="true" />
+
+            </RelativeLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:layout_marginBottom="16dp"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:paddingHorizontal="16dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/pre"
+                    style="?materialIconButtonStyle"
+                    android:layout_width="80dp"
+                    android:layout_height="80dp"
+                    app:icon="@drawable/fast_rewind_24px"
+                    app:iconGravity="textTop"
+                    app:iconSize="30dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/status"
+                    style="?materialIconButtonFilledStyle"
+                    android:layout_width="80dp"
+                    android:layout_height="80dp"
+                    android:layout_marginStart="10dp"
+                    app:icon="@drawable/play_arrow_24px"
+                    app:iconGravity="textTop"
+                    app:iconSize="30dp" />
+
+                <Button
+                    android:id="@+id/next"
+                    style="?materialIconButtonStyle"
+                    android:layout_width="80dp"
+                    android:layout_height="80dp"
+                    android:layout_marginStart="10dp"
+                    app:icon="@drawable/fast_forward_24px"
+                    app:iconGravity="textTop"
+                    app:iconSize="30dp" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </com.google.android.material.card.MaterialCardView>
+
+</LinearLayout>
