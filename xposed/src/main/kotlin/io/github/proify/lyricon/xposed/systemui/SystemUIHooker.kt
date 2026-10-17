@@ -162,9 +162,36 @@ object SystemUIHooker : PackageHooker() {
         applyLyricMode()
 
         StatusBarColorMonitor.initialize(module, classLoader)
+        allowCleartextTraffic()
         AiTranslator.init(context)
         SystemUIMediaUtils.init(context)
         StatusBarViewResolver.init(module, context)
+    }
+
+    /**
+     * 允许当前进程发起 http 明文请求。
+     *
+     * 自定义 AI 模型支持填写 `http://` 地址，但 SystemUI 的 targetSdk 默认禁止明文流量，
+     * 这里放行 [android.security.NetworkSecurityPolicy] 的明文检查（仅作用于 SystemUI 进程）。
+     *
+     * TODO: 临时方案，Tailscale 恢复后移除该放行逻辑，仅保留 HTTPS。
+     */
+    private fun allowCleartextTraffic() {
+        runCatching {
+            val policyClass = Class.forName("android.security.NetworkSecurityPolicy")
+            policyClass.declaredMethods
+                .filter { it.name == "isCleartextTrafficPermitted" }
+                .forEach { method ->
+                    runCatching {
+                        module.hook(method).intercept { true }
+                    }.onFailure {
+                        YLog.error(TAG, "Failed to hook ${method.name}", it)
+                    }
+                }
+            YLog.info(TAG, "Cleartext traffic allowed for custom AI endpoint")
+        }.onFailure {
+            YLog.error(TAG, "Failed to allow cleartext traffic", it)
+        }
     }
 
     private fun initLyriconService() {

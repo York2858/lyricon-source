@@ -386,7 +386,7 @@ private fun AiConfigEditModelPreference(
         value = config.model,
         onValueChange = { onModelChange(it) },
         endActions = {
-            IconButton(onClick = { openModelSheet(fetch = false) }) {
+            IconButton(onClick = { openModelSheet(fetch = true) }) {
                 Icon(
                     imageVector = MiuixIcons.Search,
                     contentDescription = stringResource(R.string.dialog_title_available_models),
@@ -394,22 +394,6 @@ private fun AiConfigEditModelPreference(
             }
         },
     )
-
-    // 与 lyrico 一致的「获取模型」按键：拉取接口提供的模型后进入列表选择。
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        TextButton(
-            text = stringResource(
-                if (isLoading) R.string.item_translation_model_fetching
-                else R.string.item_translation_model_fetch
-            ),
-            onClick = { openModelSheet(fetch = true) },
-        )
-    }
 
     if (showSheet) {
         WindowBottomSheet(
