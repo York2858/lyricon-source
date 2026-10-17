@@ -1,6 +1,6 @@
 package io.github.proify.lyricon.xposed.systemui.lyric
 
-/** Window-relative touch regions must not shrink when a shorter lyric replaces a longer one. */
+/** Keep the latest targets for recovery without accumulating obsolete positions. */
 internal class StatusBarGestureRegions(
     private val lyricPadding: Int,
     private val minimumLyricWidth: Int,
@@ -10,8 +10,6 @@ internal class StatusBarGestureRegions(
 ) {
     data class Bounds(val left: Int, val top: Int, val right: Int, val bottom: Int) {
         fun contains(x: Int, y: Int) = x >= left && x < right && y >= top && y < bottom
-        fun union(other: Bounds) = Bounds(minOf(left, other.left), minOf(top, other.top),
-            maxOf(right, other.right), maxOf(bottom, other.bottom))
     }
 
     private var width = 0
@@ -20,6 +18,8 @@ internal class StatusBarGestureRegions(
         private set
     var clock: Bounds? = null
         private set
+    var exclusions: List<Bounds> = emptyList()
+        private set
 
     fun setWindowSize(width: Int, height: Int) {
         if (this.width == width && this.height == height) return
@@ -27,19 +27,25 @@ internal class StatusBarGestureRegions(
         this.height = height
         lyrics = null
         clock = null
+        exclusions = emptyList()
     }
 
     fun rememberLyrics(bounds: Bounds) {
         val expanded = expand(bounds, lyricPadding, minimumLyricWidth) ?: return
-        lyrics = lyrics?.union(expanded) ?: expanded
+        lyrics = expanded
     }
 
-    fun rememberClock(bounds: Bounds) {
-        clock = expand(bounds, clockPadding, minimumClockWidth) ?: return
+    fun rememberClock(bounds: Bounds?) {
+        clock = bounds?.let { expand(it, clockPadding, minimumClockWidth) }
+    }
+
+    fun setExclusions(bounds: List<Bounds>) {
+        exclusions = bounds
     }
 
     fun contains(x: Int, y: Int): Boolean =
-        lyrics?.contains(x, y) == true || clock?.contains(x, y) == true
+        exclusions.none { it.contains(x, y) } &&
+            (lyrics?.contains(x, y) == true || clock?.contains(x, y) == true)
 
     private fun expand(bounds: Bounds, padding: Int, minimumWidth: Int): Bounds? {
         if (width <= 0 || height <= 0 || bounds.right <= bounds.left || bounds.bottom <= bounds.top) return null

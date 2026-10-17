@@ -13,7 +13,9 @@ import android.util.Log
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewConfiguration
+import android.widget.TextView
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import io.github.proify.android.extensions.dp
@@ -37,6 +39,11 @@ object StatusBarLyricTouchRouter {
     private val hitRect = Rect()
     private val rootRect = Rect()
     private val handler = Handler(Looper.getMainLooper())
+    private val protectedIds = mutableMapOf<Int, Boolean>()
+    private val protectedClasses = mutableMapOf<Class<*>, Boolean>()
+    private val protectedNames = setOf("system_icon_area", "system_icons", "statusicons",
+        "status_icons", "battery", "battery_container", "status_bar_right_side",
+        "status_bar_end_side_content", "status_bar_center_area", "centered_icon_area")
 
     private class TouchState(controller: StatusBarViewController) {
         val controller = WeakReference(controller)
@@ -46,7 +53,7 @@ object StatusBarLyricTouchRouter {
         var down: MotionEvent? = null
         var replaying = false
         var longPressed = false
-        val regions = StatusBarGestureRegions(24.dp, 160.dp, 8.dp, 48.dp, 48.dp)
+        val regions = StatusBarGestureRegions(12.dp, 0, 4.dp, 48.dp, 48.dp)
         val longPress = Runnable {
             if (tracker.longPress()) {
                 longPressed = true
@@ -133,20 +140,72 @@ object StatusBarLyricTouchRouter {
         refreshTouchBounds(root, state, controller)
     }
 
+    fun allowsDirectGesture(controller: StatusBarViewController, rawX: Float, rawY: Float): Boolean {
+        val root = controller.statusBarView.rootView
+        if (!root.getGlobalVisibleRect(rootRect)) return false
+        val x = rawX.toInt() - rootRect.left
+        val y = rawY.toInt() - rootRect.top
+        return protectedBounds(controller).none { it.contains(x, y) }
+    }
+
     private fun refreshTouchBounds(root: View, state: TouchState,
         controller: StatusBarViewController): Boolean {
         if (!root.getGlobalVisibleRect(rootRect)) return false
         state.regions.setWindowSize(rootRect.width(), rootRect.height())
+        state.regions.setExclusions(protectedBounds(controller))
         val lyrics = controller.lyricView
         if (lyrics.isShown && !lyrics.isDisabledVisible && lyrics.getGlobalVisibleRect(hitRect)) {
             state.regions.rememberLyrics(relativeBounds(hitRect, rootRect))
         }
-        controller.gestureClockAnchor()?.let { clock ->
-            if (clock.getGlobalVisibleRect(hitRect)) {
-                state.regions.rememberClock(relativeBounds(hitRect, rootRect))
-            }
-        }
+        val clock = controller.gestureClockAnchor()
+        state.regions.rememberClock(if (clock != null && clock.getGlobalVisibleRect(hitRect)) {
+            trimClockBounds(clock, hitRect)
+            relativeBounds(hitRect, rootRect)
+        } else null)
         return true
+    }
+
+    // Some ROMs give the clock a large container width; only its drawn text is a target.
+    private fun trimClockBounds(clock: View, bounds: Rect) {
+        if (clock !is TextView) { bounds.setEmpty(); return }
+        val layout = clock.layout ?: run { bounds.setEmpty(); return }
+        if (layout.lineCount == 0) { bounds.setEmpty(); return }
+        val location = IntArray(2)
+        clock.getLocationOnScreen(location)
+        var left = Float.POSITIVE_INFINITY
+        var right = Float.NEGATIVE_INFINITY
+        for (line in 0 until layout.lineCount) {
+            left = minOf(left, layout.getLineLeft(line))
+            right = maxOf(right, layout.getLineRight(line))
+        }
+        val origin = location[0] + clock.totalPaddingLeft - clock.scrollX
+        if (!bounds.intersect(origin + kotlin.math.floor(left).toInt(), bounds.top,
+                origin + kotlin.math.ceil(right).toInt(), bounds.bottom)) bounds.setEmpty()
+    }
+
+    private fun protectedBounds(controller: StatusBarViewController): List<StatusBarGestureRegions.Bounds> {
+        val result = mutableListOf<StatusBarGestureRegions.Bounds>()
+        val rect = Rect()
+        fun visit(view: View) {
+            if (view === controller.lyricView || !view.isShown) return
+            val protected = protectedIds.getOrPut(view.id) {
+                val name = runCatching { view.resources.getResourceEntryName(view.id) }
+                    .getOrDefault("").lowercase(java.util.Locale.ROOT)
+                name in protectedNames || name.contains("capsule") || name.contains("island") ||
+                    name.contains("ongoing_call_chip") || name.contains("ongoing_activity_chip") ||
+                    name.contains("promoted_notification")
+            } || protectedClasses.getOrPut(view.javaClass) {
+                val name = view.javaClass.simpleName.lowercase(java.util.Locale.ROOT)
+                name.contains("capsule") || name.contains("island") || name.contains("ongoingcall")
+            }
+            // Full-width hosting layers are not the capsule's actual touch bounds.
+            if (protected && view.getGlobalVisibleRect(rect) && rect.width() * 4 < rootRect.width() * 3) {
+                result += relativeBounds(rect, rootRect)
+            }
+            if (view is ViewGroup) for (index in 0 until view.childCount) visit(view.getChildAt(index))
+        }
+        visit(controller.statusBarView)
+        return result
     }
 
     private fun relativeBounds(bounds: Rect, root: Rect) = StatusBarGestureRegions.Bounds(
@@ -183,7 +242,8 @@ object StatusBarLyricTouchRouter {
             val y = event.rawY.toInt() - rootRect.top
             if (!state.regions.contains(x, y)) {
                 Log.i("LyriconGesture", "Status bar missed: anchor=${anchor?.javaClass?.simpleName} " +
-                    "root=$rootRect lyrics=${state.regions.lyrics} clock=${state.regions.clock}")
+                    "root=$rootRect lyrics=${state.regions.lyrics} clock=${state.regions.clock} " +
+                    "excluded=${state.regions.exclusions}")
                 return false
             }
             state.anchor = WeakReference(anchor ?: root)

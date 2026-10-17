@@ -97,6 +97,9 @@ class StatusBarViewController(
 
         // 手势控制:读取偏好并绑定回调,手势动作可配置
         refreshGestureConfig()
+        lyricView.gestureStartFilter = { event ->
+            StatusBarLyricTouchRouter.allowsDirectGesture(this, event.rawX, event.rawY)
+        }
         lyricView.gestureListener = { gesture ->
             LyricGestureActions.dispatch(gesture, gestureTouchAnchor() ?: lyricView)
         }
@@ -122,6 +125,7 @@ class StatusBarViewController(
         ScreenStateMonitor.removeListener(this)
         lyricView.onPlayingChanged = null
         lyricView.gestureListener = null
+        lyricView.gestureStartFilter = null
         lyricView.setOnClickListener(null)
         LyricControlPopup.dismissIfOwnedBy(lyricView)
         StatusBarColorMonitor.removeListener(colorChangeListener)

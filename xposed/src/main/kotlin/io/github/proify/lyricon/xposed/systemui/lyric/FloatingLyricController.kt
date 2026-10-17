@@ -68,7 +68,8 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
                 isSleepMode = ScreenStateMonitor.state == ScreenStateMonitor.ScreenState.OFF
                 // 悬浮窗图标不跟随流体云胶囊隐藏
                 logoView.capsuleHideEnabled = false
-                addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                // Visibility changes need a sync even when the window bounds stay unchanged.
+                viewTreeObserver.addOnGlobalLayoutListener {
                     syncControlWindow()
                 }
                 _lyricView = this
@@ -179,22 +180,27 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
 
     private fun syncVisibilityByMode() {
         val view = lyricView ?: return
-        // 悬浮窗开启时显示；关闭时交由状态栏歌词显示
-        view.isDisabledVisible = !floatingLyricEnabled
+        // 悬浮模式与歌词总开关同时开启时才允许显示。
+        view.isDisabledVisible = !floatingLyricEnabled || !LyricPrefs.baseStyle.lyricsEnabled
         view.updateVisibility()
         syncControlWindow()
+    }
+
+    private fun isControlEnabled(): Boolean {
+        val style = currentLyricStyle ?: return false
+        val view = _lyricView ?: return false
+        val logo = view.logoView
+        return floatingLyricEnabled && LyricPrefs.baseStyle.lyricsEnabled &&
+                style.basicStyle.floatingControlEnabled && LyricPrefs.gestureEnabled &&
+                ScreenStateMonitor.state != ScreenStateMonitor.ScreenState.OFF &&
+                !view.isHideOnLockScreen() && view.isShown && logo.isShown &&
+                style.packageStyle.logo.enable && logo.width > 0 && logo.height > 0
     }
 
     private fun syncControlWindow() {
         val context = appContext ?: return
         val wm = windowManager ?: return
-        val style = currentLyricStyle ?: return
-        val logo = _lyricView?.logoView
-        val show = floatingLyricEnabled && style.basicStyle.floatingControlEnabled && LyricPrefs.gestureEnabled &&
-                ScreenStateMonitor.state != ScreenStateMonitor.ScreenState.OFF &&
-                _lyricView?.isHideOnLockScreen() == false &&
-                style.packageStyle.logo.enable && logo != null && logo.width > 0 && logo.height > 0
-        if (!show) {
+        if (!isControlEnabled()) {
             controlHandle?.let { handle ->
                 LyricControlPopup.dismissIfOwnedBy(handle)
                 if (controlAttached) {
@@ -207,9 +213,11 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
         }
         val handle = controlHandle ?: FloatingLyricHandle(
             context,
+            isControlEnabled = ::isControlEnabled,
             configurationChanged = { syncControlWindow() }
         ).also { controlHandle = it }
         // 透明触摸层完全跟随悬浮歌词图标的位置与大小
+        val logo = _lyricView?.logoView ?: return
         val location = IntArray(2)
         logo.getLocationOnScreen(location)
         val screenWidth = context.resources.displayMetrics.widthPixels
@@ -345,6 +353,7 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
         } else {
             Gravity.START or Gravity.CENTER_VERTICAL
         }
+        view.centerTextIndependently = centerAligned
         view.gravity = gravity
         view.textView.gravity = gravity
         // 仅设置容器 gravity 不会改变行内文本的水平绘制原点，需同步强制居中

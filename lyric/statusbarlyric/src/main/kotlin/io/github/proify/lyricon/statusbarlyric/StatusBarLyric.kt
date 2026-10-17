@@ -23,6 +23,7 @@ import android.view.ViewGroup
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.DecelerateInterpolator
 import android.widget.LinearLayout
+import android.widget.Space
 import android.widget.TextView
 import androidx.core.view.contains
 import androidx.core.view.isVisible
@@ -102,6 +103,9 @@ class StatusBarLyric(
     /** 手势回调,在主线程派发,仅 [gestureEnabled] 为 true 时触发 */
     var gestureListener: ((GestureType) -> Unit)? = null
 
+    /** Let the host reserve system controls even if this view overlaps their bounds. */
+    var gestureStartFilter: ((MotionEvent) -> Boolean)? = null
+
     /**
      * 是否启用手势识别。
      *
@@ -159,6 +163,21 @@ class StatusBarLyric(
             }
         }
     }
+
+    // Only floating centered lyrics reserve a matching space opposite the logo.
+    private val logoBalanceSpace = Space(context).apply {
+        visibility = GONE
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+        layoutParams = LayoutParams(0, 0)
+    }
+
+    var centerTextIndependently: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            updateTextViewWidthMode()
+            requestLayout()
+        }
 
     // --- 对外状态 ---
 
@@ -302,6 +321,7 @@ class StatusBarLyric(
                     weight = 1f
                 }
         )
+        addView(logoBalanceSpace)
 
         updateLogoLocation()
         applyInitialStyle(initialStyle)
@@ -440,6 +460,9 @@ class StatusBarLyric(
     // --- 手势识别与触摸反馈 ---
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN && gestureStartFilter?.invoke(event) == false) {
+            return false
+        }
         if (!gestureEnabled) {
             // 手势关闭:交给系统默认触摸行为,由点击监听器处理单击
             return super.onTouchEvent(event)
@@ -578,13 +601,30 @@ class StatusBarLyric(
         if (gravity == lastLogoGravity) return; lastLogoGravity = gravity
 
         if (contains(logoView)) removeView(logoView)
+        if (contains(logoBalanceSpace)) removeView(logoBalanceSpace)
         val textIndex = indexOfChild(textView).coerceAtLeast(0)
 
         when (gravity) {
-            LogoStyle.GRAVITY_START -> addView(logoView, textIndex)
-            LogoStyle.GRAVITY_END -> addView(logoView, textIndex + 1)
-            else -> addView(logoView, textIndex)
+            LogoStyle.GRAVITY_END -> {
+                addView(logoBalanceSpace, textIndex)
+                addView(logoView, indexOfChild(textView) + 1)
+            }
+            else -> {
+                addView(logoView, textIndex)
+                addView(logoBalanceSpace, indexOfChild(textView) + 1)
+            }
         }
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val balanceLogo = centerTextIndependently && logoView.visibility != GONE
+        val logoParams = logoView.layoutParams as? LayoutParams
+        val balanceParams = logoBalanceSpace.layoutParams as LayoutParams
+        balanceParams.width = if (balanceLogo && logoParams != null) {
+            (logoParams.width + logoParams.leftMargin + logoParams.rightMargin).coerceAtLeast(0)
+        } else 0
+        logoBalanceSpace.visibility = if (balanceLogo) INVISIBLE else GONE
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }
 
     private fun updateLayoutConfig(style: LyricStyle) {
@@ -628,7 +668,7 @@ class StatusBarLyric(
     private fun updateTextViewWidthMode() {
         val lp = (textView.layoutParams as? LayoutParams)
             ?: LayoutParams(0, LayoutParams.WRAP_CONTENT)
-        if (forceAutoWidth) {
+        if (forceAutoWidth && !centerTextIndependently) {
             lp.width = LayoutParams.WRAP_CONTENT
             lp.weight = 0f
         } else {

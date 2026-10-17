@@ -20,6 +20,7 @@ import io.github.proify.lyricon.statusbarlyric.StatusBarLyric.GestureType
  */
 internal class FloatingLyricHandle(
     context: Context,
+    private val isControlEnabled: () -> Boolean,
     private val configurationChanged: () -> Unit
 ) : View(context) {
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
@@ -29,19 +30,24 @@ internal class FloatingLyricHandle(
     init {
         isClickable = true
         setOnLongClickListener {
+            if (!canInteract()) return@setOnLongClickListener false
             LyricGestureActions.dispatch(GestureType.LONG_PRESS, this)
             true
         }
     }
 
     override fun performClick(): Boolean {
+        if (!canInteract()) return false
         super.performClick()
         LyricGestureActions.dispatch(GestureType.TAP, this)
         return true
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (!LyricPrefs.gestureEnabled) return false
+        if (!canInteract()) {
+            cancelGesture()
+            return false
+        }
         if (event.pointerCount > 1) {
             cancelGesture()
             return true
@@ -72,6 +78,8 @@ internal class FloatingLyricHandle(
         }
         return true
     }
+
+    private fun canInteract(): Boolean = isAttachedToWindow && isControlEnabled()
 
     private fun cancelGesture() {
         removeCallbacks(longPress)
