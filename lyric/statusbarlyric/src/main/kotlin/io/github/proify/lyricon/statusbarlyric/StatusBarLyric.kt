@@ -180,6 +180,8 @@ class StatusBarLyric(
             if (field == value) return
             field = value
             Log.d(TAG, "休眠模式：$value")
+            textView.animationsEnabled = !value
+            logoView.animationsEnabled = !value
             if (value) {
                 pendingSleepData = PendingData()
             } else {

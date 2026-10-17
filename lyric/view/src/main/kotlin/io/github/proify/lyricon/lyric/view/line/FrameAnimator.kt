@@ -18,25 +18,34 @@ internal class FrameAnimator(
     private val onFrame: (deltaNanos: Long) -> Boolean,
     private val requestInvalidate: () -> Unit,
     private val shouldRun: () -> Boolean,
-    private val post: (Runnable) -> Unit,
+    private val needsFrame: () -> Boolean,
+    private val enqueue: (Choreographer.FrameCallback) -> Unit = {
+        Choreographer.getInstance().postFrameCallback(it)
+    },
+    private val remove: (Choreographer.FrameCallback) -> Unit = {
+        Choreographer.getInstance().removeFrameCallback(it)
+    },
 ) : Choreographer.FrameCallback {
 
     private var running = false
     private var lastFrameNanos = 0L
+    private var generation = 0
 
     val isRunning: Boolean get() = running
 
     fun startIfNeeded() {
-        if (!running && shouldRun()) {
+        if (!running && shouldRun() && needsFrame()) {
             running = true
+            generation++
             lastFrameNanos = 0L
-            post { Choreographer.getInstance().postFrameCallback(this) }
+            enqueue(this)
         }
     }
 
     fun stop() {
         running = false
-        Choreographer.getInstance().removeFrameCallback(this)
+        generation++
+        remove(this)
         lastFrameNanos = 0L
     }
 
@@ -48,11 +57,16 @@ internal class FrameAnimator(
 
         val deltaNanos = if (lastFrameNanos == 0L) 0L else frameTimeNanos - lastFrameNanos
         lastFrameNanos = frameTimeNanos
+        val frameGeneration = generation
 
         if (onFrame(deltaNanos)) requestInvalidate()
+        if (frameGeneration != generation) return
 
-        if (running) {
-            Choreographer.getInstance().postFrameCallback(this)
+        if (running && shouldRun() && needsFrame()) {
+            enqueue(this)
+        } else {
+            running = false
+            lastFrameNanos = 0L
         }
     }
 }

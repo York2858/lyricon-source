@@ -9,7 +9,6 @@ package io.github.proify.lyricon.xposed.systemui.lyric.processor
 import android.util.Log
 import io.github.proify.lyricon.lyric.ai.core.AiConfigProvider
 import io.github.proify.lyricon.lyric.model.Song
-import io.github.proify.lyricon.lyric.model.extensions.deepCopy
 import io.github.proify.lyricon.lyric.style.LyricStyle
 import io.github.proify.lyricon.xposed.systemui.ai.translate.AiTranslationOptions
 import io.github.proify.lyricon.xposed.systemui.ai.translate.AiTranslator
@@ -107,8 +106,6 @@ class AiTranslationPostProcessor(
             stylePrompt = style.basicStyle.aiTranslationPrompt
         )
 
-        val snapshotLyrics = song.lyrics?.deepCopy()
-
         return withContext(Dispatchers.IO) {
             Log.i(TAG, "Starting AI translation for: ${song.name} - ${song.artist}")
 
@@ -122,7 +119,7 @@ class AiTranslationPostProcessor(
             }
 
             // 变更检测：如果翻译内容与原内容一致，返回旧引用以优化内存和 UI 刷新
-            if (translatedSong.lyrics == snapshotLyrics) {
+            if (translatedSong === song || translatedSong.lyrics == song.lyrics) {
                 Log.d(TAG, "Translation completed but no content changed for [${song.name}].")
                 return@withContext song
             }

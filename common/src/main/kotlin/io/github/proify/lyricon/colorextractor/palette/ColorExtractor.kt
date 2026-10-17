@@ -8,69 +8,68 @@ package io.github.proify.lyricon.colorextractor.palette
 
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.util.Log
-import io.github.proify.lyricon.colorextractor.palette.ColorExtractorImpl.ThemePalette
+import android.util.LruCache
+import io.github.proify.lyricon.common.util.CoverImages
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.concurrent.ConcurrentHashMap
+import java.io.File
 
 object ColorExtractor {
+    private val scope = CoroutineScope(Dispatchers.IO.limitedParallelism(2) + SupervisorJob())
+    private val cache = LruCache<String, ColorPaletteResult>(32)
+    private val pending = mutableMapOf<String, Deferred<ColorPaletteResult?>>()
+    private val lock = Any()
 
-    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private val caches = ConcurrentHashMap<String, ColorPaletteResult>()
-    private const val TAG = "ColorExtractor"
-
-    fun extractAsync(
-        bitmap: Bitmap,
-        cacheKey: (suspend () -> String)? = null,
-        callback: (ColorPaletteResult?) -> Unit
-    ) {
-        scope.launch {
-            val key = cacheKey?.invoke()
-
-            if (key != null && caches.containsKey(key)) {
-                Log.d(TAG, "Cache hit: $key")
-                withContext(Dispatchers.Main) {
-                    callback(caches[key])
-                }
-                return@launch
-            }
-            Log.d(TAG, "Cache miss: $key")
-
-            try {
-                val start = System.currentTimeMillis()
-                val palette = ColorExtractorImpl.extractThemePalette(bitmap)
-
-                //约50ms
-                Log.d(TAG, "Extracted in ${System.currentTimeMillis() - start}ms")
-
-                fun buildColor(r: ThemePalette, isDark: Boolean): ThemeColors {
-                    val color = if (isDark) r.onBlackBackground else r.onWhiteBackground
-                    return ThemeColors(
-                        primary = color.firstOrNull() ?: Color.BLACK,
-                        swatches = color.toIntArray()
-                    )
-                }
-
-                val result = ColorPaletteResult(
-                    buildColor(palette, false),
-                    buildColor(palette, true)
-                )
-
-                key?.let { caches[it] = result }
-
-                withContext(Dispatchers.Main) {
-                    callback(result)
-                }
-            } catch (_: Exception) {
-                withContext(Dispatchers.Main) {
-                    callback(null)
+    /** Cache lookup precedes decoding; all views share one extraction per file version. */
+    suspend fun extract(file: File?): ColorPaletteResult? {
+        if (file == null) return null
+        val key = withContext(Dispatchers.IO) { CoverImages.key(file) }
+        val task = synchronized(lock) {
+            cache.get(key)?.let { return it }
+            pending.getOrPut(key) {
+                scope.async {
+                    var bitmap: Bitmap? = null
+                    try {
+                        bitmap = CoverImages.decode(file)
+                        bitmap?.let(::extractPalette)?.also { cache.put(key, it) }
+                    } catch (_: Exception) {
+                        null
+                    } finally {
+                        bitmap?.recycle()
+                    }
                 }
             }
         }
+        // Removal belongs to the shared task, even when the requesting view is cancelled.
+        task.invokeOnCompletion { synchronized(lock) { if (pending[key] === task) pending.remove(key) } }
+        return task.await()
     }
 
+    /** Compatibility entry point: the caller retains ownership of its bitmap. */
+    fun extractAsync(bitmap: Bitmap, cacheKey: (suspend () -> String)? = null,
+                     callback: (ColorPaletteResult?) -> Unit) {
+        scope.launch {
+            val key = cacheKey?.invoke()
+            val result = try {
+                key?.let(cache::get) ?: extractPalette(bitmap).also { value ->
+                    if (key != null) cache.put(key, value)
+                }
+            } catch (_: Exception) { null }
+            withContext(Dispatchers.Main) { callback(result) }
+        }
+    }
+
+    private fun extractPalette(bitmap: Bitmap): ColorPaletteResult {
+        val palette = ColorExtractorImpl.extractThemePalette(bitmap)
+        fun colors(dark: Boolean): ThemeColors {
+            val values = if (dark) palette.onBlackBackground else palette.onWhiteBackground
+            return ThemeColors(values.firstOrNull() ?: Color.BLACK, values.toIntArray())
+        }
+        return ColorPaletteResult(colors(false), colors(true))
+    }
 }

@@ -144,11 +144,22 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
             activeRenderer.step(deltaNanos, _model, lineState, measuredWidth)
         },
         requestInvalidate = { postInvalidateOnAnimation() },
-        shouldRun = { isAttachedToWindow },
-        post = { runnable -> post(runnable) },
+        shouldRun = { isAttachedToWindow && isShown && windowVisibility == VISIBLE && animationsEnabled },
+        needsFrame = { activeRenderer.needsFrame },
     )
 
     private var activeRenderer: LineRenderer = scrollRenderer
+
+    var animationsEnabled: Boolean = true
+        set(value) {
+            field = value
+            if (value) animator.startIfNeeded() else animator.stop()
+        }
+
+    override fun onVisibilityAggregated(isVisible: Boolean) {
+        super.onVisibilityAggregated(isVisible)
+        if (isVisible) animator.startIfNeeded() else animator.stop()
+    }
 
     private var primaryColors = intArrayOf()
     private var backgroundColors = intArrayOf()
@@ -234,6 +245,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
             startScrolling()
         } else {
             activeRenderer.seek(_model, lineState, posMs, measuredWidth, measuredHeight)
+            invalidate()
             animator.startIfNeeded()
         }
     }
@@ -242,9 +254,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         if (isWordSync) {
             if (syncRenderer.isScrollOnly && !isOverflow) return
             activeRenderer.update(_model, lineState, posMs, measuredWidth, measuredHeight)
-            if (syncRenderer.isPlaying && !syncRenderer.isFinished) {
-                animator.startIfNeeded()
-            }
+            animator.startIfNeeded()
         } else {
             startScrolling()
         }

@@ -49,6 +49,7 @@ internal class AidlRemotePlayer : RemotePlayer {
      *
      * @param player 远端播放器，null 表示清空。
      */
+    @Synchronized
     fun attachPlayer(player: IRemotePlayer?) {
         detachPositionMemory()
         remotePlayer = player
@@ -77,11 +78,13 @@ internal class AidlRemotePlayer : RemotePlayer {
         seekTo(position.coerceAtLeast(0L))
     }
 
+    @Synchronized
     override fun setPosition(position: Long): Boolean {
         if (!isSendingEnabled) return false
 
         return try {
-            positionBuffer?.putLong(0, position.coerceAtLeast(0L))
+            val buffer = positionBuffer ?: return false
+            buffer.putLong(0, position.coerceAtLeast(0L))
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to write position", e)
@@ -129,6 +132,7 @@ internal class AidlRemotePlayer : RemotePlayer {
 
     /** 关闭位置共享内存映射并释放句柄。 */
     private fun detachPositionMemory() {
+        positionBuffer?.let { SharedMemory.unmap(it) }
         positionBuffer = null
         positionSharedMemory?.close()
         positionSharedMemory = null

@@ -68,6 +68,7 @@ internal class SubscriberSession(
         remoteListener?.onPlaybackStateChanged(isPlaying)
     }
 
+    @Synchronized
     override fun onPositionChanged(position: Long) {
         try {
             positionBuffer?.putLong(0, position)
@@ -93,7 +94,9 @@ internal class SubscriberSession(
     }
 
     /** 释放共享内存并清空监听引用。 */
+    @Synchronized
     fun close() {
+        positionBuffer?.let { SharedMemory.unmap(it) }
         positionBuffer = null
         positionMemory?.close()
         positionMemory = null
@@ -106,12 +109,11 @@ internal class SubscriberSession(
             val hashHex = Integer.toHexString(
                 "${info.packageName}/${info.processName}".hashCode()
             )
-            positionMemory =
-                SharedMemory.create("lyricon_subscriber_pos_$hashHex", Long.SIZE_BYTES).apply {
-                    setProtect(OsConstants.PROT_READ or OsConstants.PROT_WRITE)
-                    positionBuffer = mapReadWrite()
-                }
+            positionMemory = SharedMemory.create("lyricon_subscriber_pos_$hashHex", Long.SIZE_BYTES)
+            positionMemory?.setProtect(OsConstants.PROT_READ or OsConstants.PROT_WRITE)
+            positionBuffer = positionMemory?.mapReadWrite()
         } catch (t: Throwable) {
+            close()
             Log.e(TAG, "SharedMemory mapping failed", t)
         }
     }

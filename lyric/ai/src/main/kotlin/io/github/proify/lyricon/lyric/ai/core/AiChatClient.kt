@@ -8,7 +8,24 @@ package io.github.proify.lyricon.lyric.ai.core
 
 import android.util.Log
 import com.openai.client.OpenAIClient
-import com.openai.client.okhttp.OpenAIOkHttpClient
+import com.openai.client.OpenAIClientImpl
+import okhttp3.OkHttpClient
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Request
+import okhttp3.RequestBody
+import okhttp3.Response
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okio.BufferedSink
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+import com.openai.core.http.Headers
+import com.openai.core.Timeout
+import com.openai.core.ClientOptions
+import com.openai.core.http.HttpClient
+import com.openai.core.http.HttpRequest
+import com.openai.core.http.HttpResponse
+import com.openai.core.RequestOptions
 import com.openai.core.JsonValue
 import com.openai.models.ChatModel
 import com.openai.models.ResponseFormatJsonObject
@@ -17,6 +34,13 @@ import com.openai.models.chat.completions.ChatCompletionCreateParams
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.awaitCancellation
+import java.util.concurrent.CompletableFuture
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /** 流式请求收尾结果：思考过程（reasoning_content / reasoning）+ 正文内容。 */
 data class AiChatStreamResult(
@@ -39,12 +63,11 @@ object AiChatClient {
     private const val DEFAULT_BASE_URL = "https://api.openai.com/v1"
     private const val MAX_CLIENTS = 8
 
-    /** 有界客户端缓存：超限淘汰最久未用的客户端（其底层线程池随之释放）。 */
-    private val clients = object : LinkedHashMap<String, OpenAIClient>(MAX_CLIENTS, 0.75f, true) {
-        override fun removeEldestEntry(
-            eldest: MutableMap.MutableEntry<String, OpenAIClient>?
-        ): Boolean = size > MAX_CLIENTS
+    private class ClientEntry(val client: OpenAIClient, val transport: OkHttpClient) {
+        var users = 0
+        var retired = false
     }
+    private val clients = LinkedHashMap<String, ClientEntry>(MAX_CLIENTS, 0.75f, true)
 
     /**
      * 发起一次非流式 Chat Completions 请求。
@@ -63,23 +86,36 @@ object AiChatClient {
     ): String? = withContext(Dispatchers.IO) {
         val apiKey = configs.apiKey ?: return@withContext null
         val baseUrl = resolveBaseUrl(configs)
-        val client = clientFor(baseUrl, apiKey)
+        val entry = clientFor(baseUrl, apiKey)
+        val client = entry.client
 
+        val transport = CancellableTransport(entry.transport)
         try {
+            val requestClient = client.withOptions { it.httpClient(transport) }
             val builder = paramsBuilder(configs, systemPrompt, userPrompt)
             if (jsonObject) {
                 builder.responseFormat(ResponseFormatJsonObject.builder().build())
             }
             Log.d(TAG, "Connecting to OpenAI compatible API: $baseUrl (stream=false)")
 
-            client.chat().completions().create(builder.build())
-                .choices().firstOrNull()?.message()?.content()?.orElse(null)
+            val response = suspendCancellableCoroutine { continuation ->
+                continuation.invokeOnCancellation { transport.cancel() }
+                val future = requestClient.async().chat().completions().create(builder.build())
+                future.whenComplete { result, failure ->
+                    if (failure != null) continuation.resumeWithException(failure)
+                    else continuation.resume(result)
+                }
+            }
+            response.choices().firstOrNull()?.message()?.content()?.orElse(null)
                 ?.trim()?.takeIf { it.isNotBlank() }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "OpenAI compatible request failed: ${e.message}", e)
             null
+        } finally {
+            transport.cancel()
+            releaseClient(entry)
         }
     }
 
@@ -100,15 +136,20 @@ object AiChatClient {
     ): AiChatStreamResult? = withContext(Dispatchers.IO) {
         val apiKey = configs.apiKey ?: return@withContext null
         val baseUrl = resolveBaseUrl(configs)
-        val client = clientFor(baseUrl, apiKey)
+        val entry = clientFor(baseUrl, apiKey)
+        val client = entry.client
 
+        val transport = CancellableTransport(entry.transport)
+        val cancellationWatcher = launch(start = CoroutineStart.UNDISPATCHED) {
+            try { awaitCancellation() } finally { transport.cancel() }
+        }
         try {
             val params = paramsBuilder(configs, systemPrompt, userPrompt).build()
             Log.d(TAG, "Connecting to OpenAI compatible API: $baseUrl (stream=true)")
 
             val reasoning = StringBuilder()
             val content = StringBuilder()
-            client.chat().completions().createStreaming(params).use { respStream ->
+            client.withOptions { it.httpClient(transport) }.chat().completions().createStreaming(params).use { respStream ->
                 respStream.stream().forEach { chunk ->
                     val delta = chunk.choices().firstOrNull()
                         ?.let { runCatching { it.delta() }.getOrNull() } ?: return@forEach
@@ -137,6 +178,10 @@ object AiChatClient {
         } catch (e: Exception) {
             Log.e(TAG, "AI stream failed: ${e.message}", e)
             null
+        } finally {
+            cancellationWatcher.cancel()
+            transport.cancel()
+            releaseClient(entry)
         }
     }
 
@@ -172,14 +217,111 @@ object AiChatClient {
         })
     }
 
-    private fun clientFor(baseUrl: String, apiKey: String): OpenAIClient {
+    private fun clientFor(baseUrl: String, apiKey: String): ClientEntry = synchronized(clients) {
         val key = "$baseUrl|$apiKey"
-        return synchronized(clients) {
-            clients[key] ?: OpenAIOkHttpClient.builder()
-                .apiKey(apiKey)
-                .baseUrl(baseUrl)
-                .build()
+        val entry = clients[key] ?: run {
+            val transport = OkHttpClient.Builder().build()
+            ClientEntry(OpenAIClientImpl(ClientOptions.builder()
+                .httpClient(CancellableTransport(transport, closeDelegate = true)).apiKey(apiKey).baseUrl(baseUrl).build()), transport)
                 .also { clients[key] = it }
+        }
+        entry.users++
+        while (clients.size > MAX_CLIENTS) {
+            val iterator = clients.entries.iterator()
+            val removed = iterator.next().value
+            iterator.remove()
+            removed.retired = true
+            if (removed.users == 0) removed.client.close()
+        }
+        entry
+    }
+
+    private fun releaseClient(entry: ClientEntry) = synchronized(clients) {
+        entry.users--
+        if (entry.retired && entry.users == 0) entry.client.close()
+    }
+
+    /** Keep the OkHttp Call alive through body parsing, so cancellation also aborts stalled bodies. */
+    private class CancellableTransport(
+        private val delegate: OkHttpClient,
+        private val closeDelegate: Boolean = false
+    ) : HttpClient {
+        private var cancelled = false
+        private val calls = mutableSetOf<Call>()
+
+        override fun execute(request: HttpRequest, requestOptions: RequestOptions): HttpResponse =
+            executeAsync(request, requestOptions).get()
+
+        override fun executeAsync(request: HttpRequest, requestOptions: RequestOptions): CompletableFuture<HttpResponse> {
+            val result = CompletableFuture<HttpResponse>()
+            val timeout = requestOptions.timeout ?: Timeout.default()
+            val http = delegate.newBuilder()
+                .connectTimeout(timeout.connect().toMillis(), TimeUnit.MILLISECONDS)
+                .readTimeout(timeout.read().toMillis(), TimeUnit.MILLISECONDS)
+                .writeTimeout(timeout.write().toMillis(), TimeUnit.MILLISECONDS)
+                .callTimeout(timeout.request().toMillis(), TimeUnit.MILLISECONDS).build()
+            val body = request.body?.let { source ->
+                object : RequestBody() {
+                    override fun contentType() = source.contentType()?.toMediaTypeOrNull()
+                    override fun contentLength() = source.contentLength()
+                    override fun writeTo(sink: BufferedSink) = source.writeTo(sink.outputStream())
+                }
+            }
+            val builder = Request.Builder().url(request.url()).method(request.method.name, body)
+            request.headers.names().forEach { name ->
+                request.headers.values(name).forEach { builder.addHeader(name, it) }
+            }
+            val call = http.newCall(builder.build())
+            synchronized(this) {
+                if (cancelled) return result.also { it.cancel(true) }
+                calls.add(call)
+            }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    synchronized(this@CancellableTransport) { calls.remove(call) }
+                    request.body?.close()
+                    if (call.isCanceled()) result.cancel(true) else result.completeExceptionally(e)
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    request.body?.close()
+                    if (call.isCanceled()) {
+                        response.close()
+                        synchronized(this@CancellableTransport) { calls.remove(call) }
+                        result.cancel(true)
+                        return
+                    }
+                    val wrapped = object : HttpResponse {
+                        override fun statusCode() = response.code
+                        override fun headers() = Headers.builder().putAll(response.headers.toMultimap()).build()
+                        override fun body() = response.body!!.byteStream()
+                        override fun close() {
+                            response.close()
+                            synchronized(this@CancellableTransport) { calls.remove(call) }
+                        }
+                    }
+                    if (!result.complete(wrapped)) wrapped.close()
+                }
+            })
+            result.whenComplete { _, _ -> if (result.isCancelled) call.cancel() }
+            return result
+        }
+
+        fun cancel() {
+            val snapshot = synchronized(this) {
+                cancelled = true
+                calls.toList().also { calls.clear() }
+            }
+            snapshot.forEach { it.cancel() }
+        }
+
+        override fun close() {
+            cancel()
+            if (closeDelegate) {
+                delegate.dispatcher.executorService.shutdown()
+                delegate.connectionPool.evictAll()
+                delegate.cache?.close()
+            }
         }
     }
 }

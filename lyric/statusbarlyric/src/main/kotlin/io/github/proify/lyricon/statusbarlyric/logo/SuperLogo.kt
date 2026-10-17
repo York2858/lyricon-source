@@ -68,6 +68,13 @@ class SuperLogo(context: Context) : ImageView(context) {
     private val progressRect = RectF()
     private var progressAnimator: ValueAnimator? = null
 
+    var animationsEnabled: Boolean = true
+        set(value) {
+            field = value
+            if (!value) progressAnimator?.cancel()
+            strategy?.onVisibilityChanged(value && isShown && windowVisibility == VISIBLE)
+        }
+
     companion object {
         private const val TEXT_SIZE_MULTIPLIER = 1.2f
         private const val DEFAULT_TEXT_SIZE_DP = 14
@@ -115,7 +122,7 @@ class SuperLogo(context: Context) : ImageView(context) {
         this.progress = startProgress
         invalidate()
 
-        if (current < duration) {
+        if (current < duration && animationsEnabled) {
             progressAnimator = ValueAnimator.ofFloat(startProgress, 1f).apply {
                 this.duration = duration - current
                 interpolator = LinearInterpolator()
@@ -178,7 +185,7 @@ class SuperLogo(context: Context) : ImageView(context) {
     }
 
     private fun handleVisibilityChange(visibility: Int) {
-        val visible = visibility == VISIBLE && isShown
+        val visible = animationsEnabled && visibility == VISIBLE && isShown && windowVisibility == VISIBLE
         strategy?.onVisibilityChanged(visible)
 
         if (!visible) {

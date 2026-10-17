@@ -56,12 +56,12 @@ object LyricDataHub : ActivePlayerListener {
      * @param rawSong 待加工的原始歌曲
      */
     private fun runProcessingPipeline(rawSong: Song?) {
-        val song = rawSong?.deepCopy()
         val currentVersion = versionCounter.incrementAndGet()
         activePipelineJob?.cancel()
 
         activePipelineJob = scope.launch {
             try {
+                val song = rawSong?.deepCopy()
                 if (song == null) {
                     if (isCurrentVersion(currentVersion)) dispatchSong(null)
                     return@launch
@@ -86,6 +86,7 @@ object LyricDataHub : ActivePlayerListener {
                 val finalSong =
                     LyricDataProcessor.executePostProcessingPipeline(preProcessed, style)
 
+                if (finalSong === preProcessed) return@launch
                 if (isCurrentVersion(currentVersion)) {
                     dispatchSong(LyricDataProcessor.executeDisplayProcessing(finalSong, style))
                 } else {
@@ -120,12 +121,12 @@ object LyricDataHub : ActivePlayerListener {
 
     override fun onSongChanged(song: Song?) {
         this.cachedRawSong = song?.deepCopy()
-        runProcessingPipeline(song)
+        runProcessingPipeline(cachedRawSong)
     }
 
     private var lastDispatchSongId = 0
     private fun dispatchSong(song: Song?) {
-        val normalize = song?.deepCopy()?.normalize()
+        val normalize = song?.normalize()
 
         val hashCode = normalize?.hashCode() ?: 0
         if (hashCode == lastDispatchSongId) return

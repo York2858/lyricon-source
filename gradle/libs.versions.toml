@@ -30,7 +30,6 @@ kotlinxCoroutines = "1.9.0"
 aboutlibrariesCore = "15.2.0"
 accompanistDrawablePainter = "0.37.3"
 androidsvg = "1.4"
-bonsai = "1.2.0"
 capsuleAndroid = "2.1.1-patch2"
 haze = "1.7.3"
 lottieCompose = "6.7.1"
@@ -84,7 +83,6 @@ kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutine
 aboutlibraries-core = { module = "com.mikepenz:aboutlibraries-core", version.ref = "aboutlibrariesCore" }
 accompanist-drawablepainter = { module = "com.google.accompanist:accompanist-drawablepainter", version.ref = "accompanistDrawablePainter" }
 androidsvg = { module = "com.caverock:androidsvg-aar", version.ref = "androidsvg" }
-bonsai-core = { module = "cafe.adriel.bonsai:bonsai-core", version.ref = "bonsai" }
 capsule-android = { module = "com.mocharealm.gaze:capsule-android", version.ref = "capsuleAndroid" }
 chrisbanes-haze = { module = "dev.chrisbanes.haze:haze", version.ref = "haze" }
 lottie-compose = { module = "com.airbnb.android:lottie-compose", version.ref = "lottieCompose" }

@@ -23,16 +23,18 @@ internal val json: Json = Json {
 internal fun ByteArray.deflate(): ByteArray {
     if (isEmpty()) return byteArrayOf()
 
-    return Deflater().run {
-        setInput(this@deflate)
-        finish()
-
-        ByteArrayOutputStream().use { output ->
-            val buffer = ByteArray(4096)
-            while (!finished()) {
-                output.write(buffer, 0, deflate(buffer))
+    val compressor = Deflater(Deflater.BEST_SPEED)
+    return try {
+        compressor.setInput(this)
+        compressor.finish()
+        ByteArrayOutputStream(size.coerceAtMost(64 * 1024)).use { output ->
+            val buffer = ByteArray(8192)
+            while (!compressor.finished()) {
+                output.write(buffer, 0, compressor.deflate(buffer))
             }
             output.toByteArray()
-        }.also { end() }
+        }
+    } finally {
+        compressor.end()
     }
 }

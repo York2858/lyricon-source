@@ -34,6 +34,7 @@ internal class PositionMemoryChannel(
     }
 
     /** 读取最近一次写入的位置（毫秒，非负）；失败时返回 0。 */
+    @Synchronized
     fun readPosition(): Long = try {
         readBuffer?.getLong(POSITION_OFFSET)?.coerceAtLeast(0L) ?: 0L
     } catch (_: Throwable) {
@@ -41,6 +42,7 @@ internal class PositionMemoryChannel(
     }
 
     /** 释放共享内存与映射。 */
+    @Synchronized
     fun close() {
         readBuffer?.let { runCatching { SharedMemory.unmap(it) } }
         sharedMemory?.close()
@@ -54,11 +56,11 @@ internal class PositionMemoryChannel(
             val hashHex = Integer.toHexString(
                 "${providerInfo.providerPackageName}/${providerInfo.playerPackageName}/${providerInfo.processName}".hashCode()
             )
-            sharedMemory = SharedMemory.create("lyricon_pos_$hashHex", Long.SIZE_BYTES).apply {
-                setProtect(OsConstants.PROT_READ or OsConstants.PROT_WRITE)
-                readBuffer = mapReadOnly()
-            }
+            sharedMemory = SharedMemory.create("lyricon_pos_$hashHex", Long.SIZE_BYTES)
+            sharedMemory?.setProtect(OsConstants.PROT_READ or OsConstants.PROT_WRITE)
+            readBuffer = sharedMemory?.mapReadOnly()
         } catch (t: Throwable) {
+            close()
             Log.e(TAG, "SharedMemory init failed", t)
         }
     }

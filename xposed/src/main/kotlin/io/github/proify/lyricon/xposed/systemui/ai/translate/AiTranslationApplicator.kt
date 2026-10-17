@@ -30,6 +30,6 @@ internal object AiTranslationApplicator {
             }
         }
         Log.v(TAG, "Applied $appliedCount translation lines to ${song.name}")
-        return song.copy(lyrics = newLyrics)
+        return if (appliedCount == 0) song else song.copy(lyrics = newLyrics)
     }
 }

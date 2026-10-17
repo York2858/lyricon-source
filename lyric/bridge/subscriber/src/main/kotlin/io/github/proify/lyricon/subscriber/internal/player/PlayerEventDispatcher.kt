@@ -7,6 +7,7 @@
 package io.github.proify.lyricon.subscriber.internal.player
 
 import android.os.Build
+import android.content.Context
 import android.os.SharedMemory
 import android.util.Log
 import androidx.annotation.RequiresApi
@@ -14,6 +15,7 @@ import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.subscriber.ActivePlayerListener
 import io.github.proify.lyricon.subscriber.IActivePlayerListener
 import io.github.proify.lyricon.subscriber.ProviderInfo
+import io.github.proify.lyricon.subscriber.util.ScreenStateMonitor
 import io.github.proify.lyricon.subscriber.internal.wire.json
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +24,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import java.nio.ByteBuffer
 import java.util.concurrent.CopyOnWriteArraySet
 
@@ -29,30 +33,50 @@ import java.util.concurrent.CopyOnWriteArraySet
  * 活跃播放器事件分发器。
  *
  * 作为 AIDL 回调接收中心服务推送的播放器事件，再分发给本地 [ActivePlayerListener]。
- * 播放进度通过 [SharedMemory] 轮询读取；轮询仅在绑定共享内存后运行。
+ * 播放进度通过 [SharedMemory] 读取；仅在播放、亮屏且有监听者时轮询。
  *
  * 单个监听器抛出的异常会被隔离并记录，不影响其他监听器与 AIDL 回调事务。
  */
 @RequiresApi(Build.VERSION_CODES.O_MR1)
-internal class PlayerEventDispatcher : IActivePlayerListener.Stub() {
+internal class PlayerEventDispatcher(context: Context) : IActivePlayerListener.Stub(),
+    ScreenStateMonitor.ScreenStateListener {
     private val listeners = CopyOnWriteArraySet<ActivePlayerListener>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var positionMemory: SharedMemory? = null
     private var positionBuffer: ByteBuffer? = null
     private var positionJob: Job? = null
+    private val positionLock = Any()
+    private var playing = false
+    private var lastPosition = Long.MIN_VALUE
+    private var destroyed = false
+
+    init {
+        ScreenStateMonitor.initialize(context)
+        ScreenStateMonitor.addListener(this)
+    }
+
+    override fun onScreenOn() = synchronized(positionLock) { updatePositionPoll() }
+    override fun onScreenOff() = synchronized(positionLock) { updatePositionPoll() }
+    override fun onScreenUnlocked() = onScreenOn()
 
     /** 注册本地活跃播放器监听器。 */
     fun registerActivePlayerListener(listener: ActivePlayerListener): Boolean =
-        listeners.add(listener)
+        synchronized(positionLock) {
+            if (destroyed) false else listeners.add(listener).also { updatePositionPoll() }
+        }
 
     /** 移除本地活跃播放器监听器。 */
     fun unregisterActivePlayerListener(listener: ActivePlayerListener): Boolean =
-        listeners.remove(listener)
+        synchronized(positionLock) { listeners.remove(listener).also { updatePositionPoll() } }
 
     /** 更新远端提供的播放进度共享内存；null 表示停止位置轮询。 */
-    fun setPositionSharedMemory(memory: SharedMemory?) {
+    fun setPositionSharedMemory(memory: SharedMemory?) = synchronized(positionLock) {
         detachPositionMemory()
-        if (memory == null) return
+        if (memory == null) return@synchronized
+        if (destroyed || memory.size < Long.SIZE_BYTES) {
+            memory.close()
+            return@synchronized
+        }
 
         positionMemory = memory
         positionBuffer = try {
@@ -63,7 +87,7 @@ internal class PlayerEventDispatcher : IActivePlayerListener.Stub() {
             positionMemory = null
             null
         }
-        restartPositionPoll()
+        updatePositionPoll()
     }
 
     override fun onActiveProviderChanged(providerInfo: ByteArray?) {
@@ -77,6 +101,10 @@ internal class PlayerEventDispatcher : IActivePlayerListener.Stub() {
     }
 
     override fun onPlaybackStateChanged(isPlaying: Boolean) {
+        synchronized(positionLock) {
+            playing = isPlaying
+            updatePositionPoll()
+        }
         dispatch { it.onPlaybackStateChanged(isPlaying) }
     }
 
@@ -100,42 +128,52 @@ internal class PlayerEventDispatcher : IActivePlayerListener.Stub() {
      * 释放共享内存；[clearListeners] 为 true 时同时结束调度器生命周期。
      */
     fun release(clearListeners: Boolean = false) {
-        detachPositionMemory()
+        synchronized(positionLock) {
+            if (clearListeners) destroyed = true
+            playing = false
+            detachPositionMemory()
+            if (clearListeners) listeners.clear()
+        }
         if (!clearListeners) return
 
-        positionJob?.cancel()
-        positionJob = null
         scope.cancel()
-        listeners.clear()
+        ScreenStateMonitor.removeListener(this)
     }
 
     /** 释放共享内存映射并停止位置轮询。 */
     private fun detachPositionMemory() {
         positionJob?.cancel()
         positionJob = null
+        positionBuffer?.let { SharedMemory.unmap(it) }
         positionBuffer = null
         positionMemory?.close()
         positionMemory = null
+        lastPosition = Long.MIN_VALUE
     }
 
-    /** 重新启动位置轮询（每次绑定共享内存时调用）。 */
-    private fun restartPositionPoll() {
-        if (positionBuffer == null) return
-        positionJob?.cancel()
-        positionJob = scope.launch { readPositions() }
+    /** 根据播放、屏幕、监听者和连接状态决定是否需要轮询。 */
+    private fun updatePositionPoll() {
+        val shouldPoll = positionBuffer != null && playing && listeners.isNotEmpty() &&
+                ScreenStateMonitor.state != ScreenStateMonitor.ScreenState.OFF
+        if (!shouldPoll) {
+            positionJob?.cancel()
+            positionJob = null
+        } else if (positionJob?.isActive != true) {
+            lastPosition = Long.MIN_VALUE
+            positionJob = scope.launch { readPositions() }
+        }
     }
 
     private suspend fun readPositions() {
-        var lastPosition = Long.MIN_VALUE
+        val coroutineContext = currentCoroutineContext()
         while (true) {
-            val buffer = positionBuffer ?: return
-            val position = try {
-                buffer.getLong(0)
-            } catch (_: Exception) {
-                null
+            val position = synchronized(positionLock) {
+                coroutineContext.ensureActive()
+                val buffer = positionBuffer ?: return
+                val value = buffer.getLong(0)
+                if (value == lastPosition) null else value.also { lastPosition = it }
             }
-            if (position != null && position != lastPosition) {
-                lastPosition = position
+            if (position != null) {
                 dispatch { it.onPositionChanged(position) }
             }
             delay(POSITION_POLL_INTERVAL_MS)
@@ -160,6 +198,6 @@ internal class PlayerEventDispatcher : IActivePlayerListener.Stub() {
 
     private companion object {
         private const val TAG = "PlayerEventDispatcher"
-        private const val POSITION_POLL_INTERVAL_MS = 16L
+        private const val POSITION_POLL_INTERVAL_MS = 50L
     }
 }

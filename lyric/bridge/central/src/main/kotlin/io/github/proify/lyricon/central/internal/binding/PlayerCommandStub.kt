@@ -14,7 +14,7 @@ import io.github.proify.lyricon.central.internal.player.PlayerSession
 import io.github.proify.lyricon.central.internal.player.PlayerListener
 import io.github.proify.lyricon.central.internal.player.PositionMemoryChannel
 import io.github.proify.lyricon.central.internal.player.PositionTicker
-import io.github.proify.lyricon.central.internal.util.ScreenStateMonitor
+import io.github.proify.lyricon.subscriber.util.ScreenStateMonitor
 import io.github.proify.lyricon.central.internal.wire.inflate
 import io.github.proify.lyricon.central.internal.wire.json
 import io.github.proify.lyricon.lyric.model.Song

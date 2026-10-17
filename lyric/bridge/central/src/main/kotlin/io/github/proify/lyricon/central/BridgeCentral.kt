@@ -12,7 +12,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import androidx.core.content.ContextCompat
 import io.github.proify.lyricon.central.internal.CentralConstants
-import io.github.proify.lyricon.central.internal.util.ScreenStateMonitor
+import io.github.proify.lyricon.subscriber.util.ScreenStateMonitor
 
 /**
  * 中央桥接管理对象。

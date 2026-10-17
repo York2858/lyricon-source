@@ -13,18 +13,22 @@ import android.view.Gravity
 import android.view.ViewGroup
 import android.view.WindowManager
 import io.github.proify.android.extensions.dp
-import io.github.proify.android.extensions.toBitmap
 import io.github.proify.lyricon.app.bridge.AppBridgeConstants
 import io.github.proify.lyricon.colorextractor.palette.ColorExtractor
 import io.github.proify.lyricon.colorextractor.palette.ColorPaletteResult
 import io.github.proify.lyricon.common.PackageNames
-import io.github.proify.lyricon.common.util.ScreenStateMonitor
+import io.github.proify.lyricon.subscriber.util.ScreenStateMonitor
 import io.github.proify.lyricon.lyric.style.BasicStyle
 import io.github.proify.lyricon.lyric.style.LyricStyle
 import io.github.proify.lyricon.lyric.style.TextStyle
 import io.github.proify.lyricon.statusbarlyric.StatusBarLyric
 import io.github.proify.lyricon.statusbarlyric.StatusColor
 import io.github.proify.lyricon.xposed.logger.YLog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import java.io.File
 
 /**
@@ -61,6 +65,7 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
             _lyricView?.let { return it }
             return StatusBarLyric(context, style, null).apply {
                 isDisabledVisible = true
+                isSleepMode = ScreenStateMonitor.state == ScreenStateMonitor.ScreenState.OFF
                 gestureListener = { gesture -> onLyricGesture(gesture) }
                 _lyricView = this
             }
@@ -174,30 +179,17 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
         applyResolvedStatusColor()
     }
 
+    private val coverScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var coverJob: Job? = null
+
     fun updateCoverThemeColors(coverFile: File?) {
-        val style = currentLyricStyle
+        coverJob?.cancel()
         coverColorPaletteResult = null
-        if (style == null || !shouldUseCoverTextColor(style)) {
-            applyResolvedStatusColor()
-            return
-        }
-        val bitmap = coverFile?.toBitmap()
-        if (bitmap == null) {
-            applyResolvedStatusColor()
-            return
-        }
-        try {
-            ColorExtractor.extractAsync(
-                bitmap = bitmap,
-                cacheKey = { coverFile.name }
-            ) { result ->
-                coverColorPaletteResult = result
-                applyResolvedStatusColor()
-                bitmap.recycle()
-            }
-        } catch (e: Exception) {
-            YLog.error(TAG, "Failed to extract cover theme colors", e)
-            bitmap.recycle()
+        applyResolvedStatusColor()
+        val style = currentLyricStyle ?: return
+        if (!shouldUseCoverTextColor(style)) return
+        coverJob = coverScope.launch {
+            coverColorPaletteResult = ColorExtractor.extract(coverFile)
             applyResolvedStatusColor()
         }
     }

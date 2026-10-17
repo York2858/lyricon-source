@@ -7,7 +7,13 @@
 package io.github.proify.lyricon.xposed.systemui.lyric
 
 import android.os.Handler
-import io.github.proify.android.extensions.crc32
+import io.github.proify.lyricon.common.util.CoverImages
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.lyric.style.LyricStyle
 import io.github.proify.lyricon.lyric.style.TextStyle
@@ -341,36 +347,36 @@ object LyricViewController : ActivePlayerListener,
         updateCoverFile(coverFile)
     }
 
-    private var lastCoverSignature = 0L
+    private val coverScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var coverJob: Job? = null
+    private var lastCoverSignature: String? = null
+
     private fun updateCoverFile(coverFile: File?) {
-        if (coverFile != null) {
-            val signature = coverFile.crc32()
-            if (signature == lastCoverSignature) {
-                YLog.verbose(TAG, "Cover file is the same, skip update")
-                return
-            }
-            lastCoverSignature = signature
-        } else {
-            lastCoverSignature = 0
-        }
-
-        updateAllControllers {
-            lyricView.logoView.apply {
-                this.coverFile = coverFile
-                (strategy as? CoverStrategy)?.updateContent()
-            }
-            updateCoverThemeColors(coverFile)
-        }
-
-        updateFloatingLyric {
-            it.logoView.apply {
-                this.coverFile = coverFile
-                (strategy as? CoverStrategy)?.updateContent()
-            }
-        }
-
         StatusBarViewManager.runOnMainThread {
-            FloatingLyricController.updateCoverThemeColors(coverFile)
+            coverJob?.cancel()
+            coverJob = coverScope.launch {
+                val signature = withContext(Dispatchers.IO) { coverFile?.let(CoverImages::key) }
+                if (coverFile != null && signature == lastCoverSignature) return@launch
+                lastCoverSignature = signature
+                updateAllControllers {
+                    lyricView.logoView.apply {
+                        this.coverFile = coverFile
+                        (strategy as? CoverStrategy)?.updateContent()
+                    }
+                    updateCoverThemeColors(coverFile)
+                }
+
+                updateFloatingLyric {
+                    it.logoView.apply {
+                        this.coverFile = coverFile
+                        (strategy as? CoverStrategy)?.updateContent()
+                    }
+                }
+
+                StatusBarViewManager.runOnMainThread {
+                    FloatingLyricController.updateCoverThemeColors(coverFile)
+                }
+            }
         }
     }
 }

@@ -27,14 +27,13 @@ import java.util.concurrent.atomic.AtomicInteger
  * - [AiTranslationRequester] 筛选行、组请求并解析响应；
  * - [AiTranslationApplicator] 把有效译文写回 Song。
  *
- * AI 网络请求不绑定歌词 UI 流水线生命周期。切歌只会取消当前等待者，不会取消已经发出的请求；
- * 已开始的请求完成后仍会写入缓存，未开始的 pending 请求会在队列过长或清空缓存时被淘汰。
+ * 同一首歌的请求由当前等待者共享；最后一个等待者取消时，排队与网络任务一起取消。
  */
 object AiTranslator {
     private const val TAG = "LyriconAiTranslator"
     private const val MAX_CACHE_SIZE = 1000
-    private const val MAX_RUNNING_TRANSLATIONS = 10
-    private const val MAX_PENDING_TRANSLATIONS = 10
+    private const val MAX_RUNNING_TRANSLATIONS = 2
+    private const val MAX_PENDING_TRANSLATIONS = 2
 
     private val cacheGeneration = AtomicInteger(0)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -85,7 +84,7 @@ object AiTranslator {
 
     fun clearCache(callback: () -> Unit) {
         Log.i(TAG, "Clearing all translation caches (Memory & DB)...")
-        scheduler.cancelPending()
+        scheduler.cancelAll()
         cache.clear(callback)
     }
 
@@ -114,7 +113,7 @@ object AiTranslator {
             "Cache miss. Waiting for AI translation: ${song.name} (${originalLines.size} lines)"
         )
         val apiResults =
-            scheduler.getOrEnqueue(songContentId, configs, options, song, originalLines).await()
+            scheduler.awaitTranslation(songContentId, configs, options, song, originalLines)
         if (apiResults.isNullOrEmpty()) {
             Log.w(TAG, "Failed to get translation from API.")
             return song

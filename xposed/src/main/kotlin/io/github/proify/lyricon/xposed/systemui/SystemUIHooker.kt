@@ -15,7 +15,7 @@ import io.github.proify.android.extensions.safeEncode
 import io.github.proify.lyricon.app.bridge.AppBridgeConstants
 import io.github.proify.lyricon.app.bridge.LyriconBridge
 import io.github.proify.lyricon.central.BridgeCentral
-import io.github.proify.lyricon.common.util.ScreenStateMonitor
+import io.github.proify.lyricon.subscriber.util.ScreenStateMonitor
 import io.github.proify.lyricon.common.util.ViewHierarchyParser
 import io.github.proify.lyricon.subscriber.ConnectionListener
 import io.github.proify.lyricon.subscriber.LyriconFactory

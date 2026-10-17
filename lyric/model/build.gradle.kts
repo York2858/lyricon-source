@@ -19,7 +19,7 @@ kotlin {
 
 dependencies {
     implementation(libs.kotlinx.serialization.json)
-    testImplementation(kotlin("test"))
+    testImplementation(libs.junit)
 }
 
 val version: String = rootProject.extra.get("lyricModelVersion") as String

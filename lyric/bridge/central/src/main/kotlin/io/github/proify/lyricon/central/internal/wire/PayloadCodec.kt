@@ -34,16 +34,20 @@ internal fun ByteArray.inflate(): ByteArray {
         setInput(this@inflate)
     }
 
-    return ByteArrayOutputStream().also { out ->
-        val buffer = ByteArray(1024)
-        while (!inflater.finished()) {
-            val count = inflater.inflate(buffer)
-            if (count > 0) {
-                out.write(buffer, 0, count)
-            } else if (inflater.needsInput()) {
-                break
+    return try {
+        ByteArrayOutputStream().use { out ->
+            val buffer = ByteArray(8192)
+            while (!inflater.finished()) {
+                val count = inflater.inflate(buffer)
+                if (count > 0) {
+                    out.write(buffer, 0, count)
+                } else if (!inflater.finished()) {
+                    throw DataFormatException("Incomplete or unsupported ZLIB payload")
+                }
             }
+            out.toByteArray()
         }
+    } finally {
         inflater.end()
-    }.toByteArray()
+    }
 }

@@ -27,6 +27,10 @@ import kotlin.math.abs
 import kotlin.math.max
 
 internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
+    private var cachedComposeShader: ComposeShader? = null
+    private var lastComposeBase: Shader? = null
+    private var lastComposeMask: Shader? = null
+    private var lastMaskTotalWidth = -1f
     private var bgColors = intArrayOf(Color.GRAY)
     private var hlColors = intArrayOf(Color.WHITE)
 
@@ -62,6 +66,10 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
     }
 
     fun clearShaderCache() {
+        cachedComposeShader = null
+        lastComposeBase = null
+        lastComposeMask = null
+        lastMaskTotalWidth = -1f
         bgRainbowCache.clear()
         hlRainbowCache.clear()
         cachedAlphaMaskShader = null
@@ -88,87 +96,101 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
         hlPaint: TextPaint,
         normPaint: TextPaint
     ) {
+        val originalBgAlpha = bgPaint.alpha
+        val originalHlAlpha = hlPaint.alpha
         val y = (viewHeight / 2f) + baselineOffset
-        canvas.withSave {
-            val xOffset = when {
-                isOverflow -> scrollX
-                model.isAlignedRight -> viewWidth - model.width
-                isCenterAligned -> (viewWidth - model.width) / 2f
-                else -> 0f
-            }
-            translate(xOffset, 0f)
+        try {
+            canvas.withSave {
+                val xOffset = when {
+                    isOverflow -> scrollX
+                    model.isAlignedRight -> viewWidth - model.width
+                    isCenterAligned -> (viewWidth - model.width) / 2f
+                    else -> 0f
+                }
+                translate(xOffset, 0f)
 
-            if (scrollOnly) {
-                canvas.drawText(model.wordText, 0f, y, normPaint)
-                return@withSave
-            }
+                if (scrollOnly) {
+                    canvas.drawText(model.wordText, 0f, y, normPaint)
+                    return@withSave
+                }
 
-            if (isRainbowBg) {
-                bgPaint.shader = bgRainbowCache.getOrCreate(model.width, bgColors)
-            } else {
-                bgPaint.shader = null
-            }
+                if (isRainbowBg) {
+                    bgPaint.shader = bgRainbowCache.getOrCreate(model.width, bgColors)
+                } else {
+                    bgPaint.shader = null
+                }
 
-            if (charMotionEnabled) {
-                val bgClipStart = if (useGradient) 0f else highlightWidth
-                drawAnimatedUnits(
-                    canvas,
-                    model,
-                    highlightWidth,
-                    bgClipStart,
-                    Float.MAX_VALUE,
-                    viewHeight,
-                    y,
-                    bgPaint,
-                    renderGlow = true
-                )
-            } else if (!useGradient) {
-                canvas.withSave {
-                    canvas.clipRect(highlightWidth, 0f, Float.MAX_VALUE, viewHeight.toFloat())
+                if (bgPaint.shader != null) bgPaint.alpha = 255
+                if (charMotionEnabled) {
+                    val bgClipStart = if (useGradient) 0f else highlightWidth
+                    drawAnimatedUnits(
+                        canvas,
+                        model,
+                        highlightWidth,
+                        bgClipStart,
+                        Float.MAX_VALUE,
+                        viewHeight,
+                        y,
+                        bgPaint,
+                        renderGlow = true
+                    )
+                } else if (!useGradient) {
+                    canvas.withSave {
+                        canvas.clipRect(highlightWidth, 0f, Float.MAX_VALUE, viewHeight.toFloat())
+                        canvas.drawText(model.wordText, 0f, y, bgPaint)
+                    }
+                } else {
                     canvas.drawText(model.wordText, 0f, y, bgPaint)
                 }
-            } else {
-                canvas.drawText(model.wordText, 0f, y, bgPaint)
-            }
 
-            if (highlightWidth > 0f) {
-                canvas.withSave {
-                    canvas.clipRect(0f, 0f, highlightWidth, viewHeight.toFloat())
+                if (highlightWidth > 0f && model.width > 0f) {
+                    canvas.withSave {
+                        canvas.clipRect(0f, 0f, highlightWidth, viewHeight.toFloat())
 
-                    if (useGradient) {
-                        val baseShader = if (isRainbowHl) {
-                            hlRainbowCache.getOrCreate(model.width, hlColors)
+                        if (useGradient) {
+                            val baseShader = if (isRainbowHl) {
+                                hlRainbowCache.getOrCreate(model.width, hlColors)
+                            } else {
+                                getOrCreateSolidGradientShader(model.width, hlPaint.color)
+                            }
+                            val maskShader = getOrCreateAlphaMaskShader(model.width, highlightWidth)
+                            if (lastComposeBase !== baseShader || lastComposeMask !== maskShader) {
+                                cachedComposeShader = ComposeShader(baseShader, maskShader, PorterDuff.Mode.DST_IN)
+                                lastComposeBase = baseShader
+                                lastComposeMask = maskShader
+                            }
+                            hlPaint.shader = cachedComposeShader
                         } else {
-                            getOrCreateSolidGradientShader(model.width, hlPaint.color)
+                            if (isRainbowHl) {
+                                hlPaint.shader = hlRainbowCache.getOrCreate(model.width, hlColors)
+                            } else {
+                                hlPaint.shader = null
+                            }
                         }
-                        val maskShader = getOrCreateAlphaMaskShader(model.width, highlightWidth)
-                        hlPaint.shader = ComposeShader(baseShader, maskShader, PorterDuff.Mode.DST_IN)
-                    } else {
-                        if (isRainbowHl) {
-                            hlPaint.shader = hlRainbowCache.getOrCreate(model.width, hlColors)
+                        if (hlPaint.shader != null) hlPaint.alpha = 255
+                        if (charMotionEnabled) {
+                            // 渐变模式下背景 pass 已完整绘制辉光，高亮 pass 关闭辉光以
+                            // 减半 shadowLayer 绘制开销（视觉一致：光晕不受高亮裁剪）。
+                            drawAnimatedUnits(
+                                canvas,
+                                model,
+                                highlightWidth,
+                                0f,
+                                highlightWidth,
+                                viewHeight,
+                                y,
+                                hlPaint,
+                                renderGlow = !useGradient
+                            )
                         } else {
-                            hlPaint.shader = null
+                            canvas.drawText(model.wordText, 0f, y, hlPaint)
                         }
-                    }
-                    if (charMotionEnabled) {
-                        // 渐变模式下背景 pass 已完整绘制辉光，高亮 pass 关闭辉光以
-                        // 减半 shadowLayer 绘制开销（视觉一致：光晕不受高亮裁剪）。
-                        drawAnimatedUnits(
-                            canvas,
-                            model,
-                            highlightWidth,
-                            0f,
-                            highlightWidth,
-                            viewHeight,
-                            y,
-                            hlPaint,
-                            renderGlow = !useGradient
-                        )
-                    } else {
-                        canvas.drawText(model.wordText, 0f, y, hlPaint)
                     }
                 }
             }
+        } finally {
+            bgPaint.alpha = originalBgAlpha
+            hlPaint.alpha = originalHlAlpha
         }
     }
 
@@ -222,7 +244,7 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
             }
         }
 
-        // 返回 false 表示后续单元都在裁剪区右侧之外，可提前结束本 pass。
+        // Transform before culling: scaled or shifted glyphs can enter the visible region.
         fun addUnit(
             textStart: Int,
             textLength: Int,
@@ -234,19 +256,16 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
             emphasisGroup: EmphasisGroup?,
             emphasisCharIndex: Int
         ): Boolean {
-            if (x0 >= clipEnd) {
-                flush()
-                return false
-            }
-            if (x1 <= clipStart) {
-                flush()
-                return true
-            }
-
             val transform = effectEngine.prepareUnit(
                 textStart, textLength, x0, x1, isCjk, beginMs, endMs,
                 emphasisGroup, emphasisCharIndex
             )
+            val overflow = ((x1 - x0) * (transform.scale - 1f) / 2f).coerceAtLeast(0f) +
+                    if (renderGlow) transform.glowRadius else 0f
+            if (x0 + transform.dx - overflow >= clipEnd || x1 + transform.dx + overflow <= clipStart) {
+                flush()
+                return true
+            }
             val visibleLeft = x0.coerceAtLeast(clipStart)
             val visibleRight = x1.coerceAtMost(clipEnd)
             val fullyVisible = visibleLeft == x0 && visibleRight == x1
@@ -261,7 +280,7 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
                 )
                 return true
             }
-            if (hasSegment && transform.dx == segDx && transform.dy == segDy && x0 == segX1) {
+            if (hasSegment && textStart == segTextEnd && transform.dx == segDx && transform.dy == segDy && x0 == segX1) {
                 segTextEnd = textStart + textLength
                 segX1 = x1
             } else {
@@ -363,7 +382,8 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
         val right = (x1 + transform.dx + scaleOverflow).coerceAtMost(clipEnd)
 
         canvas.withSave {
-            clipRect(left - glow, 0f, right + glow, viewHeight.toFloat())
+            clipRect((left - glow).coerceAtLeast(clipStart), 0f,
+                (right + glow).coerceAtMost(clipEnd), viewHeight.toFloat())
             if (transform.scale != 1f) {
                 // 围绕「位移后的字符中心」缩放：与源项目「scale 后整体平移」语义一致，
                 // 位移不被缩放放大。
@@ -379,7 +399,7 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
                 if (glow > 0f) {
                     paint.setShadowLayer(
                         glow, 0f, 0f,
-                        Color.argb((transform.glowAlpha * 255f).coerceIn(0f, 1f).toInt(), 255, 255, 255)
+                        Color.argb(glowAlphaByte(transform.glowAlpha), 255, 255, 255)
                     )
                     shadowApplied = true
                 }
@@ -392,8 +412,8 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
     }
 
     private fun getOrCreateAlphaMaskShader(totalWidth: Float, highlightWidth: Float): Shader {
-        val edgePosition = max(highlightWidth / totalWidth, 0.9f)
-        if (cachedAlphaMaskShader == null || abs(lastHighlightWidth - highlightWidth) > 0.1f) {
+        val edgePosition = max(highlightWidth / totalWidth, 0.9f).coerceIn(0f, 1f)
+        if (cachedAlphaMaskShader == null || lastMaskTotalWidth != totalWidth || abs(lastHighlightWidth - highlightWidth) > 0.1f) {
             cachedAlphaMaskShader = LinearGradient(
                 0f, 0f, highlightWidth, 0f,
                 intArrayOf(Color.BLACK, Color.BLACK, Color.TRANSPARENT),
@@ -401,6 +421,7 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
                 Shader.TileMode.CLAMP
             )
             lastHighlightWidth = highlightWidth
+            lastMaskTotalWidth = totalWidth
         }
         return cachedAlphaMaskShader!!
     }

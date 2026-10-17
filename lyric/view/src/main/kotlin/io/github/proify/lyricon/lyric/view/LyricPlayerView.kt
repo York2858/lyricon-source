@@ -49,6 +49,20 @@ open class LyricPlayerView(
     private val activeLines = mutableListOf<IRichLyricLine>()
     private val textRecycleView by lazy { RichLyricLineView(context) }
 
+    var animationsEnabled: Boolean = true
+        set(value) {
+            field = value
+            forEach { child -> applyAnimationState(child) }
+        }
+
+    private fun applyAnimationState(child: View) {
+        if (child is RichLyricLineView) {
+            child.main.animationsEnabled = animationsEnabled
+            child.secondary.animationsEnabled = animationsEnabled
+            child.tertiary.animationsEnabled = animationsEnabled
+        }
+    }
+
     /** 悬浮窗场景：强制内容水平居中 */
     var forceCenterContent: Boolean = false
         set(value) {
@@ -64,6 +78,7 @@ open class LyricPlayerView(
 
     override fun onViewAdded(child: View?) {
         super.onViewAdded(child)
+        child?.let { applyAnimationState(it) }
         if (forceCenterContent && child is RichLyricLineView) {
             child.setCenterAligned(true)
         }

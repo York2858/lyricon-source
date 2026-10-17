@@ -47,7 +47,7 @@ internal class LyriconSubscriberImpl(
     private val listeners = CopyOnWriteArraySet<ConnectionListener>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val remote =
-        CentralConnection { disconnect(remote = true, notifyRemote = false) }
+        CentralConnection(context) { disconnect(remote = true, notifyRemote = false) }
     private val registration = RegistrationCoordinator()
 
     /** 当前连接状态（由 [RegistrationCoordinator] 维护）。 */

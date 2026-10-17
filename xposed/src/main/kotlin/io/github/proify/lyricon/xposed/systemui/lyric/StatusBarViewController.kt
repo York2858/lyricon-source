@@ -18,12 +18,11 @@ import androidx.core.view.doOnAttach
 import androidx.core.view.isVisible
 import io.github.proify.android.extensions.dp
 import io.github.proify.android.extensions.isLandScape
-import io.github.proify.android.extensions.toBitmap
 import io.github.proify.lyricon.app.bridge.AppBridge.LyricGesturePrefs
 import io.github.proify.lyricon.colorextractor.palette.ColorExtractor
 import io.github.proify.lyricon.colorextractor.palette.ColorPaletteResult
 import io.github.proify.lyricon.common.util.ResourceMapper
-import io.github.proify.lyricon.common.util.ScreenStateMonitor
+import io.github.proify.lyricon.subscriber.util.ScreenStateMonitor
 import io.github.proify.lyricon.lyric.style.BasicStyle
 import io.github.proify.lyricon.lyric.style.LyricStyle
 import io.github.proify.lyricon.lyric.style.TextStyle
@@ -37,6 +36,11 @@ import io.github.proify.lyricon.xposed.systemui.lyric.LyricViewController.isPlay
 import io.github.proify.lyricon.xposed.systemui.lyric.control.LyricControlPopup
 import io.github.proify.lyricon.xposed.systemui.util.OnColorChangeListener
 import io.github.proify.lyricon.xposed.systemui.util.ViewVisibilityController
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import java.io.File
 
 /**
@@ -97,6 +101,7 @@ class StatusBarViewController(
         statusBarView.viewTreeObserver.addOnGlobalLayoutListener(onGlobalLayoutListener)
         lyricView.addOnAttachStateChangeListener(lyricAttachListener)
         ScreenStateMonitor.addListener(this)
+        lyricView.isSleepMode = ScreenStateMonitor.state == ScreenStateMonitor.ScreenState.OFF
         lyricView.onPlayingChanged = { _ -> }
 
         // 手势控制:读取偏好并绑定回调,手势动作可配置
@@ -113,6 +118,7 @@ class StatusBarViewController(
     }
 
     fun onDestroy() {
+        coverJob?.cancel()
         statusBarView.removeOnAttachStateChangeListener(statusBarAttachListener)
         statusBarView.viewTreeObserver.removeOnGlobalLayoutListener(onGlobalLayoutListener)
         lyricView.removeOnAttachStateChangeListener(lyricAttachListener)
@@ -225,21 +231,16 @@ class StatusBarViewController(
         systemStatusBarColor?.let { updateStatusColor(it) }
     }
 
+    private val coverScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var coverJob: Job? = null
+
     fun updateCoverThemeColors(coverFile: File?) {
+        coverJob?.cancel()
         coverColorPaletteResult = null
-        try {
-            val bitmap = coverFile?.toBitmap() ?: return
-            ColorExtractor.extractAsync(
-                bitmap = bitmap,
-                cacheKey = {
-                    coverFile.name
-                }) {
-                coverColorPaletteResult = it
-                systemStatusBarColor?.let { updateStatusColor(it) }
-                bitmap.recycle()
-            }
-        } catch (e: Exception) {
-            YLog.error(TAG, "Failed to extract cover theme colors", e)
+        systemStatusBarColor?.let { updateStatusColor(it) }
+        coverJob = coverScope.launch {
+            coverColorPaletteResult = ColorExtractor.extract(coverFile)
+            systemStatusBarColor?.let { updateStatusColor(it) }
         }
     }
 

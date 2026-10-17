@@ -8,14 +8,18 @@ package io.github.proify.lyricon.statusbarlyric.logo
 
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
-import android.graphics.Bitmap
 import android.graphics.Outline
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.view.animation.LinearInterpolator
-import io.github.proify.android.extensions.crc32
 import io.github.proify.android.extensions.dp
-import io.github.proify.android.extensions.toBitmap
+import io.github.proify.lyricon.common.util.CoverImages
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import io.github.proify.lyricon.lyric.style.LogoStyle
 
 /**
@@ -33,6 +37,8 @@ class CoverStrategy(
 
     private var rotationAnimator: ObjectAnimator? = null
     private var lastFileSignature: String? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var loadJob: Job? = null
 
     override var isEffective: Boolean = false
         private set
@@ -40,29 +46,42 @@ class CoverStrategy(
     var style: Int = LogoStyle.STYLE_COVER_CIRCLE
 
     override fun updateContent() {
-        // 封面模式清除 Tint
         if (view.imageTintList != null) view.imageTintList = null
-
-        val coverFile = view.coverFile
-        if (coverFile == null || !coverFile.exists()) {
+        loadJob?.cancel()
+        val file = view.coverFile
+        if (file == null) {
             view.setImageDrawable(null)
             isEffective = false
             lastFileSignature = null
         } else {
-            val signature = coverFile.crc32().toString()
-
-            // 只有文件变动或未初始化时才重新加载
-            if (signature != lastFileSignature || view.drawable == null) {
-                val bitmap: Bitmap? = coverFile.toBitmap(view.width, view.height)
-                view.setImageBitmap(bitmap)
-                lastFileSignature = signature
-                isEffective = bitmap != null
-
-                stopAnimation(true)
+            val maxSize = maxOf(view.width, view.height, 64).coerceAtMost(512)
+            loadJob = scope.launch {
+                withContext(Dispatchers.IO) {
+                    val signature = CoverImages.key(file)
+                    val alreadyLoaded = withContext(Dispatchers.Main) {
+                        signature == lastFileSignature && view.drawable != null
+                    }
+                    if (alreadyLoaded) return@withContext
+                    val bitmap = CoverImages.decode(file, maxSize)
+                    var adopted = false
+                    try {
+                        withContext(Dispatchers.Main) {
+                            if (view.coverFile == file) {
+                                view.setImageBitmap(bitmap)
+                                adopted = true
+                                lastFileSignature = signature
+                                isEffective = bitmap != null
+                                stopAnimation(true)
+                                applyStyleAndAnimation()
+                                view.updateVisibility()
+                            }
+                        }
+                    } finally {
+                        if (!adopted) bitmap?.recycle()
+                    }
+                }
             }
         }
-
-        // 始终应用 Outline 和 动画状态检查，以防 Style 变更
         applyStyleAndAnimation()
         view.updateVisibility()
     }
@@ -96,6 +115,11 @@ class CoverStrategy(
     }
 
     override fun onDetach() {
+        loadJob?.cancel()
+        loadJob = null
+        view.setImageDrawable(null)
+        lastFileSignature = null
+        isEffective = false
         stopAnimation()
         // 可以在此释放图片，下次 onAttach 时会通过 updateContent 重新加载
         // setImageDrawable(null)
@@ -132,7 +156,7 @@ class CoverStrategy(
     }
 
     private fun checkAnimationState() {
-        if (view.isAttachedToWindow && view.isShown && isEffective && style == LogoStyle.Companion.STYLE_COVER_CIRCLE) {
+        if (view.animationsEnabled && view.windowVisibility == View.VISIBLE && view.isAttachedToWindow && view.isShown && isEffective && style == LogoStyle.Companion.STYLE_COVER_CIRCLE) {
             startAnimation()
         } else {
             stopAnimation()

@@ -14,6 +14,7 @@ internal interface LineRenderer {
     val isPlaying: Boolean
     val isFinished: Boolean
     val isStarted: Boolean
+    val needsFrame: Boolean
 
     fun step(deltaNanos: Long, model: LyricModel, state: LineState, viewWidth: Int): Boolean
     fun draw(canvas: Canvas, model: LyricModel, paint: TextPaint, state: LineState, viewWidth: Int, viewHeight: Int)

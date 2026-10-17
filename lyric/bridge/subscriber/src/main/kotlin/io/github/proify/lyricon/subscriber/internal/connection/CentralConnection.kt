@@ -6,6 +6,7 @@
 
 package io.github.proify.lyricon.subscriber.internal.connection
 
+import android.content.Context
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -21,10 +22,11 @@ import io.github.proify.lyricon.subscriber.internal.player.PlayerEventDispatcher
  */
 @RequiresApi(Build.VERSION_CODES.O_MR1)
 internal class CentralConnection(
+    context: Context,
     onRemoteDied: () -> Unit,
 ) {
     private var remoteService: IRemoteService? = null
-    private val eventDispatcher = PlayerEventDispatcher()
+    private val eventDispatcher = PlayerEventDispatcher(context)
     private val deathRecipient = IBinder.DeathRecipient(onRemoteDied)
 
     /** 绑定新的远端服务，旧服务会自动解除死亡监听。 */
