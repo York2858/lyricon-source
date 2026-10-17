@@ -82,8 +82,8 @@
     <string name="item_text_enable_rainbow_color">Enable rainbow gradient</string>
     <string name="item_text_enable_rainbow_color_secondary">Apply rainbow to secondary line</string>
     <string name="item_text_enable_rainbow_color_secondary_summary">When enabled, secondary line follows rainbow gradient; when disabled, it uses custom background color.</string>
-    <string name="item_base_double_tap_switch_clock">Double-tap to switch lyric display mode</string>
-    <string name="item_base_double_tap_switch_clock_summary">When enabled, double-tap the status bar to switch between status bar lyrics and floating lyrics.</string>
+    <string name="item_floating_control">Floating lyric control dot</string>
+    <string name="item_floating_control_summary">Lyrics let touches pass through. The floating lyric icon handles tap, hold and swipe gestures from the basic gesture settings.</string>
     <string name="item_text_enable_custom_color">Custom color</string>
     <string name="item_text_color_light_mode">Color (light mode)</string>
     <string name="item_text_color_dark_mode">Color (dark mode)</string>
@@ -295,10 +295,20 @@
     <string name="option_gesture_previous">Previous track</string>
     <string name="option_gesture_next">Next track</string>
     <string name="option_gesture_open_control">Open control panel</string>
+    <string name="option_gesture_switch_lyric_mode">Switch lyrics (status bar / floating)</string>
+    <string name="option_gesture_toggle_lyrics">Toggle lyrics</string>
+    <string name="item_lyrics_enabled">Show lyrics</string>
+    <string name="item_lyrics_enabled_summary">Controls status bar and floating lyrics. Turn this on to restore lyrics after hiding them with a gesture.</string>
+    <string name="message_lyrics_disabled">Lyrics hidden. Restore them in basic settings.</string>
+    <string name="item_gesture_shared_summary">Status bar lyrics and the floating dot share these gesture actions.</string>
     <string name="item_gesture_haptic">Vibration feedback</string>
     <string name="item_gesture_haptic_summary">Vibrate when a gesture is recognized; turn off to disable.</string>
     <string name="item_ai_config_description">Note</string>
     <string name="dialog_summary_ai_config_description">Configuration note</string>
     <string name="not_configured">Not set</string>
 
+    <string name="item_music_tags_default_app">Default audio app</string>
+    <string name="item_music_tags_default_app_summary">Use this app to open the current local audio from the left control panel button</string>
+    <string name="option_music_tags_ask">Ask every time</string>
+    <string name="option_music_tags_unavailable">Selected app unavailable — choose again</string>
 </resources>

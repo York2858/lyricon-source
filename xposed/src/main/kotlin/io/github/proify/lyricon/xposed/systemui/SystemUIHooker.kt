@@ -7,6 +7,7 @@
 package io.github.proify.lyricon.xposed.systemui
 
 import android.os.Bundle
+import android.util.Log
 import android.view.ViewGroup
 import androidx.core.view.doOnAttach
 import io.github.proify.android.extensions.deflate
@@ -25,6 +26,7 @@ import io.github.proify.lyricon.xposed.hook.PackageHooker
 import io.github.proify.lyricon.xposed.logger.YLog
 import io.github.proify.lyricon.xposed.systemui.ai.translate.AiTranslator
 import io.github.proify.lyricon.xposed.systemui.hook.OplusCapsuleHooker
+import io.github.proify.lyricon.xposed.systemui.hook.StatusBarLyricTouchRouter
 import io.github.proify.lyricon.xposed.systemui.hook.StatusBarColorMonitor
 import io.github.proify.lyricon.xposed.systemui.hook.StatusBarDisableHooker
 import io.github.proify.lyricon.xposed.systemui.hook.StatusBarViewResolver
@@ -64,6 +66,7 @@ object SystemUIHooker : PackageHooker() {
 
     /** 系统信息区是否处于禁用状态（由 StatusBarDisableHooker 驱动） */
     private var currentSystemInfoDisabled = false
+    private var appliedFloatingMode: Boolean? = null
 
     override fun onHook() {
         YLog.info(TAG, "onHook")
@@ -139,6 +142,7 @@ object SystemUIHooker : PackageHooker() {
 
         ScreenStateMonitor.initialize(context)
         OplusCapsuleHooker.initialize(module, classLoader)
+        StatusBarLyricTouchRouter.initialize(module)
         NotificationCoverHelper.initialize()
         ViewVisibilityTracker.initialize(module, classLoader)
         initDataChannel()
@@ -162,36 +166,9 @@ object SystemUIHooker : PackageHooker() {
         applyLyricMode()
 
         StatusBarColorMonitor.initialize(module, classLoader)
-        allowCleartextTraffic()
         AiTranslator.init(context)
         SystemUIMediaUtils.init(context)
         StatusBarViewResolver.init(module, context)
-    }
-
-    /**
-     * 允许当前进程发起 http 明文请求。
-     *
-     * 自定义 AI 模型支持填写 `http://` 地址，但 SystemUI 的 targetSdk 默认禁止明文流量，
-     * 这里放行 [android.security.NetworkSecurityPolicy] 的明文检查（仅作用于 SystemUI 进程）。
-     *
-     * TODO: 临时方案，Tailscale 恢复后移除该放行逻辑，仅保留 HTTPS。
-     */
-    private fun allowCleartextTraffic() {
-        runCatching {
-            val policyClass = Class.forName("android.security.NetworkSecurityPolicy")
-            policyClass.declaredMethods
-                .filter { it.name == "isCleartextTrafficPermitted" }
-                .forEach { method ->
-                    runCatching {
-                        module.hook(method).intercept { true }
-                    }.onFailure {
-                        YLog.error(TAG, "Failed to hook ${method.name}", it)
-                    }
-                }
-            YLog.info(TAG, "Cleartext traffic allowed for custom AI endpoint")
-        }.onFailure {
-            YLog.error(TAG, "Failed to allow cleartext traffic", it)
-        }
     }
 
     private fun initLyriconService() {
@@ -268,19 +245,42 @@ object SystemUIHooker : PackageHooker() {
                 AiTranslator.clearCache { LyricDataHub.reprocessCurrentSong() }
             }
 
-            onCommand(AppBridgeConstants.REQUEST_UPDATE_LYRIC_STYLE) {
+            onCommand(AppBridgeConstants.REQUEST_UPDATE_LYRIC_MODE) { data ->
+                handleLyricModeUpdate(data)
+            }
+
+            onCommand(AppBridgeConstants.REQUEST_UPDATE_LYRIC_STYLE) { data ->
+                if (data.getBoolean(AppBridgeConstants.EXTRA_LYRIC_MODE_ONLY)) {
+                    handleLyricModeUpdate(data)
+                    return@onCommand
+                }
                 YLog.info(TAG, "App requested lyric style update")
 
                 LyricPrefs.reloadFloatingPrefs()
+                LyricPrefs.reloadBasePrefs()
                 StatusBarViewManager.runOnMainThread {
                     FloatingLyricController.updateLyricStyle(LyricPrefs.floatingLyricStyle)
-                    // 双击切换显示模式等手势配置也存放于悬浮窗偏好，一并刷新
+                    // Shared gesture preferences apply to both lyric entry points.
                     StatusBarViewManager.forEach { it.refreshGestureConfig() }
                     applyLyricMode()
                 }
                 // 展示层加工（隐藏翻译/仅显示翻译、繁简、屏蔽词等）随样式变更重跑
                 LyricDataHub.reprocessCurrentSong()
             }
+        }
+    }
+
+    private fun handleLyricModeUpdate(data: Bundle) {
+        StatusBarViewManager.runOnMainThread {
+            LyricPrefs.reloadFloatingPrefs()
+            LyricPrefs.reloadBasePrefs()
+            LyricPrefs.applyModeSnapshot(
+                if (data.containsKey(AppBridgeConstants.EXTRA_FLOATING_MODE))
+                    data.getBoolean(AppBridgeConstants.EXTRA_FLOATING_MODE) else null,
+                if (data.containsKey(AppBridgeConstants.EXTRA_LYRICS_ENABLED))
+                    data.getBoolean(AppBridgeConstants.EXTRA_LYRICS_ENABLED) else null
+            )
+            applyLyricMode()
         }
     }
 
@@ -325,17 +325,26 @@ object SystemUIHooker : PackageHooker() {
     fun applyLyricMode() {
         StatusBarViewManager.runOnMainThread {
             val useFloatingLyric = LyricPrefs.floatingBaseStyle.manualFloatingLyricEnabled
+            val lyricsEnabled = LyricPrefs.baseStyle.lyricsEnabled
+            if (appliedFloatingMode != useFloatingLyric) {
+                // Prepare the destination's text and position before making its window visible.
+                LyricDataHub.refreshDisplayForMode()
+                appliedFloatingMode = useFloatingLyric
+            }
             YLog.info(
                 TAG,
                 "applyLyricMode useFloating=$useFloatingLyric " +
                         "systemInfoDisabled=$currentSystemInfoDisabled " +
                         "controllers=${StatusBarViewManager.controllers.size}"
             )
-            FloatingLyricController.onFloatingLyricModeChanged(useFloatingLyric)
-            val shouldHideStatusBarLyric = currentSystemInfoDisabled || useFloatingLyric
+            FloatingLyricController.onFloatingLyricModeChanged(useFloatingLyric && lyricsEnabled)
+            val shouldHideStatusBarLyric = !lyricsEnabled || currentSystemInfoDisabled || useFloatingLyric
             StatusBarViewManager.forEach {
                 it.onDisableStateChanged(shouldHideStatusBarLyric)
             }
+            Log.i("LyriconGesture", "Applied mode floating=$useFloatingLyric enabled=$lyricsEnabled " +
+                "floatingShown=${FloatingLyricController.lyricViewOrNull()?.isShown} " +
+                "statusBarShown=${StatusBarViewManager.controllers.count { it.lyricView.isShown }}")
         }
     }
 }

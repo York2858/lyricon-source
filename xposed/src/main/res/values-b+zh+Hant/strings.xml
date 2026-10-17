@@ -1,0 +1,8 @@
+<resources>
+    <string name="control_music_tags">用其他應用程式開啟目前歌曲</string>
+    <string name="control_music_tags_chooser">用其他應用程式開啟目前歌曲</string>
+    <string name="control_music_tags_no_audio">找不到目前歌曲可存取的本機音訊檔案</string>
+    <string name="control_music_tags_ambiguous">找到多個相符音訊，無法確定目前播放檔案</string>
+    <string name="control_music_tags_open_failed">無法開啟目前音訊，請確認檔案可存取且已安裝支援的應用程式</string>
+    <string name="control_music_tags_default_unavailable">預設應用程式無法開啟此音訊，請選擇其他應用程式</string>
+</resources>

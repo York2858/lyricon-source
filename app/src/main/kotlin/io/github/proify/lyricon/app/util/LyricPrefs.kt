@@ -9,6 +9,7 @@ package io.github.proify.lyricon.app.util
 import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
+import android.os.Bundle
 import io.github.proify.android.extensions.fromJson
 import io.github.proify.android.extensions.getPrivateSharedPreferences
 import io.github.proify.android.extensions.json
@@ -22,6 +23,7 @@ import io.github.proify.lyricon.app.bridge.AppBridgeConstants
 import io.github.proify.lyricon.app.bridge.LyriconBridge
 import io.github.proify.lyricon.common.PackageNames
 import io.github.proify.lyricon.lyric.style.VisibilityRule
+import io.github.proify.lyricon.lyric.style.BasicStyle
 
 object LyricPrefs {
 
@@ -71,6 +73,21 @@ object LyricPrefs {
             .send()
     }
 
+    fun notifyLyricModeChanged(floatingMode: Boolean? = null, lyricsEnabled: Boolean? = null) {
+        LyriconBridge.with(LyriconApp.get())
+            .to(PackageNames.SYSTEM_UI)
+            // Older running module versions still understand this command during an APK update.
+            .key(AppBridgeConstants.REQUEST_UPDATE_LYRIC_STYLE)
+            .payload(Bundle().apply {
+                putBoolean(AppBridgeConstants.EXTRA_LYRIC_MODE_ONLY, true)
+                putBoolean(AppBridgeConstants.EXTRA_FLOATING_MODE, floatingMode ?:
+                    floatingBasicStylePrefs.getBoolean(BasicStyle.KEY_FLOATING_MODE, false))
+                putBoolean(AppBridgeConstants.EXTRA_LYRICS_ENABLED, lyricsEnabled ?:
+                    basicStylePrefs.getBoolean(BasicStyle.KEY_LYRICS_ENABLED, true))
+            })
+            .send()
+    }
+
     private val notifyHandler = Handler(Looper.getMainLooper())
 
     private val pendingStyleNotify = Runnable { notifyFloatingStyleChanged() }
@@ -92,7 +109,10 @@ object LyricPrefs {
      * 悬浮窗配置页的偏好变更监听：注册后页面内改动即可实时下发，无需退出页面。
      */
     val floatingStyleChangeListener =
-        SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> scheduleFloatingStyleNotify() }
+        SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == BasicStyle.KEY_FLOATING_MODE) notifyLyricModeChanged()
+            else scheduleFloatingStyleNotify()
+        }
 
     fun getLyricStylePrefNames() = mutableListOf<String>().apply {
         add(LyricStylePrefs.PREF_NAME_BASE)

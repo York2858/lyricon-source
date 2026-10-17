@@ -1,0 +1,8 @@
+<resources>
+    <string name="control_music_tags">用其他应用打开当前歌曲</string>
+    <string name="control_music_tags_chooser">用其他应用打开当前歌曲</string>
+    <string name="control_music_tags_no_audio">找不到当前歌曲可访问的本地音频文件</string>
+    <string name="control_music_tags_ambiguous">找到多个匹配音频，无法确定当前播放文件</string>
+    <string name="control_music_tags_open_failed">无法打开当前音频，请确认文件可访问且已安装支持的应用</string>
+    <string name="control_music_tags_default_unavailable">默认应用无法打开此音频，请选择其他应用</string>
+</resources>

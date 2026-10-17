@@ -221,6 +221,10 @@ class RichLyricLineView(
     private var oldLine: IRichLyricLine? = null
 
     private fun refreshLines() {
+        assembler.updateFlags(
+            displayTranslation, displayRoma,
+            enableRelativeProgress, enableRelativeProgressHighlight
+        )
         if (oldLine === line && line.isTitleLine()) return
         oldLine = line
 

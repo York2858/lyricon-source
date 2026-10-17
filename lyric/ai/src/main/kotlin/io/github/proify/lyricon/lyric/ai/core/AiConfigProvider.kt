@@ -58,6 +58,7 @@ interface AiConfigProvider {
  */
 class AiConfigProviderImpl(
     private val preferences: SharedPreferences,
+    private val preferencesSource: (() -> SharedPreferences)? = null,
 ) : AiConfigProvider {
 
     private val _activeConfig = MutableStateFlow<AiConfig?>(null)
@@ -82,7 +83,7 @@ class AiConfigProviderImpl(
      * 从 [AiConfigStore] 读取配置集合，找到激活项并更新 [_activeConfig]。
      */
     private fun reload() {
-        val collection = AiConfigStore.load(preferences)
+        val collection = AiConfigStore.load(preferencesSource?.invoke() ?: preferences)
         val activeId = collection.activeId
 
         val activeProfile = if (activeId != null) {
@@ -97,7 +98,7 @@ class AiConfigProviderImpl(
 
     override fun getActiveConfig(): AiConfig? {
         // 如果缓存为空，尝试重新加载
-        if (_activeConfig.value == null) {
+        if (preferencesSource != null || _activeConfig.value == null) {
             reload()
         }
         return _activeConfig.value

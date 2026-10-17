@@ -65,7 +65,8 @@ import top.yukonga.miuix.kmp.utils.overScrollVertical
 @Composable
 fun LogoPage(
     scrollBehavior: ScrollBehavior,
-    preferences: SharedPreferences
+    preferences: SharedPreferences,
+    showCapsuleHideOption: Boolean = false
 ) {
     val showCustomLogoDialog = remember { mutableStateOf(false) }
     var customLogoStr by rememberStringPreference(
@@ -144,7 +145,7 @@ fun LogoPage(
             }
         }
 
-        if (Utils.isOPlus) {
+        if (showCapsuleHideOption && Utils.isOPlus) {
             item(key = "coloros") {
                 SmallTitle(
                     text = stringResource(R.string.item_logo_section_coloros),

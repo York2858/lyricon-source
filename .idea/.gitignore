@@ -1,3 +1,16 @@
 # 默认忽略的文件
 /shelf/
 /workspace.xml
+
+# Local IDE preferences and device/session state
+/.name
+/androidTestResultsUserPreferences.xml
+/appInsightsSettings.xml
+/deploymentTargetSelector.xml
+/deviceManager.xml
+/git_toolbox_blame.xml
+/go.imports.xml
+/markdown.xml
+/migrations.xml
+/studiobot.xml
+/valkyrie_settings.xml

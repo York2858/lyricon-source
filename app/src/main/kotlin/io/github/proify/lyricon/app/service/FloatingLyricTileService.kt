@@ -29,10 +29,10 @@ class FloatingLyricTileService : TileService() {
         super.onClick()
         val prefs = LyricPrefs.floatingBasicStylePrefs
         val enabled = !prefs.getBoolean(key, false)
-        prefs.edit {
+        prefs.edit(commit = true) {
             putBoolean(key, enabled)
         }
-        LyricPrefs.notifyFloatingStyleChanged()
+        LyricPrefs.notifyLyricModeChanged()
         syncTileState(enabled)
     }
 

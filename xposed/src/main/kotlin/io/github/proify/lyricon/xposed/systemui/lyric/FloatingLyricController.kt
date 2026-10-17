@@ -24,6 +24,7 @@ import io.github.proify.lyricon.lyric.style.TextStyle
 import io.github.proify.lyricon.statusbarlyric.StatusBarLyric
 import io.github.proify.lyricon.statusbarlyric.StatusColor
 import io.github.proify.lyricon.xposed.logger.YLog
+import io.github.proify.lyricon.xposed.systemui.lyric.control.LyricControlPopup
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -54,9 +55,8 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
     private var coverColorPaletteResult: ColorPaletteResult? = null
 
     private var _lyricView: StatusBarLyric? = null
-
-    /** 双击切换显示模式：是否启用 */
-    private var doubleTapSwitchMode = false
+    private var controlHandle: FloatingLyricHandle? = null
+    private var controlAttached = false
 
     private val lyricView: StatusBarLyric?
         get() {
@@ -66,7 +66,11 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
             return StatusBarLyric(context, style, null).apply {
                 isDisabledVisible = true
                 isSleepMode = ScreenStateMonitor.state == ScreenStateMonitor.ScreenState.OFF
-                gestureListener = { gesture -> onLyricGesture(gesture) }
+                // 悬浮窗图标不跟随流体云胶囊隐藏
+                logoView.capsuleHideEnabled = false
+                addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                    syncControlWindow()
+                }
                 _lyricView = this
             }
         }
@@ -93,7 +97,6 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
     fun updateLyricStyle(lyricStyle: LyricStyle) {
         currentLyricStyle = lyricStyle
         floatingLyricEnabled = lyricStyle.basicStyle.manualFloatingLyricEnabled
-        doubleTapSwitchMode = lyricStyle.basicStyle.floatingDoubleTapSwitchClock
 
         val view = lyricView ?: return
         view.forceAutoWidth = true
@@ -104,7 +107,7 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
 
         val lp = layoutParams ?: return
         lp.width = resolveFloatingWindowWidth(lyricStyle)
-        lp.flags = resolveWindowFlags()
+        lp.flags = WINDOW_FLAGS
         applyLayoutPosition(lp, lyricStyle)
 
         if (windowAttached) {
@@ -127,21 +130,6 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
         syncVisibilityByMode()
     }
 
-    // --- 双击切换显示模式 ---
-
-    /**
-     * 悬浮窗歌词手势回调。
-     *
-     * 双击切换由 [StatusBarLyric] 统一判定后以 [StatusBarLyric.GestureType.DOUBLE_TAP] 派发，
-     * 这里只处理双击，避免与单击来源叠加导致一次双击切换两次。
-     */
-    private fun onLyricGesture(gesture: StatusBarLyric.GestureType) {
-        if (!doubleTapSwitchMode) return
-        if (gesture == StatusBarLyric.GestureType.DOUBLE_TAP) {
-            toggleLyricDisplayMode()
-        }
-    }
-
     /**
      * 在「状态栏歌词」与「悬浮窗歌词」之间切换显示模式。
      *
@@ -151,20 +139,15 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
     fun toggleLyricDisplayMode() {
         val context = appContext ?: return
         runCatching {
-            context.startActivity(
+            context.sendBroadcast(
                 Intent(AppBridgeConstants.ACTION_TOGGLE_FLOATING_LYRIC)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    .setPackage(PackageNames.APPLICATION)
+                    .setClassName(PackageNames.APPLICATION, AppBridgeConstants.LYRIC_GESTURE_RECEIVER)
             )
             YLog.info(TAG, "Requested lyric display mode toggle")
         }.onFailure {
             YLog.error(TAG, "Failed to toggle lyric display mode", it)
         }
     }
-
-    /** 窗口 flags；开启双击切换时需要接收触摸事件 */
-    private fun resolveWindowFlags(): Int =
-        if (doubleTapSwitchMode) WINDOW_FLAGS_TOUCHABLE else WINDOW_FLAGS
 
     fun onFloatingLyricModeChanged(enabled: Boolean) {
         floatingLyricEnabled = enabled
@@ -199,6 +182,68 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
         // 悬浮窗开启时显示；关闭时交由状态栏歌词显示
         view.isDisabledVisible = !floatingLyricEnabled
         view.updateVisibility()
+        syncControlWindow()
+    }
+
+    private fun syncControlWindow() {
+        val context = appContext ?: return
+        val wm = windowManager ?: return
+        val style = currentLyricStyle ?: return
+        val logo = _lyricView?.logoView
+        val show = floatingLyricEnabled && style.basicStyle.floatingControlEnabled && LyricPrefs.gestureEnabled &&
+                ScreenStateMonitor.state != ScreenStateMonitor.ScreenState.OFF &&
+                _lyricView?.isHideOnLockScreen() == false &&
+                style.packageStyle.logo.enable && logo != null && logo.width > 0 && logo.height > 0
+        if (!show) {
+            controlHandle?.let { handle ->
+                LyricControlPopup.dismissIfOwnedBy(handle)
+                if (controlAttached) {
+                    runCatching { wm.removeViewImmediate(handle) }
+                        .onFailure { YLog.error(TAG, "Remove floating control failed", it) }
+                    controlAttached = false
+                }
+            }
+            return
+        }
+        val handle = controlHandle ?: FloatingLyricHandle(
+            context,
+            configurationChanged = { syncControlWindow() }
+        ).also { controlHandle = it }
+        // 透明触摸层完全跟随悬浮歌词图标的位置与大小
+        val location = IntArray(2)
+        logo.getLocationOnScreen(location)
+        val screenWidth = context.resources.displayMetrics.widthPixels
+        val screenHeight = context.resources.displayMetrics.heightPixels
+        val touchWidth = maxOf(logo.width, 48.dp)
+        val touchHeight = maxOf(logo.height, 48.dp)
+        val params = WindowManager.LayoutParams().apply {
+            type = WINDOW_TYPE_APPLICATION_OVERLAY
+            format = PixelFormat.TRANSLUCENT
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+            width = touchWidth
+            height = touchHeight
+            gravity = Gravity.TOP or Gravity.LEFT
+            x = (location[0] - (touchWidth - logo.width) / 2)
+                .coerceIn(0, (screenWidth - touchWidth).coerceAtLeast(0))
+            y = (location[1] - (touchHeight - logo.height) / 2)
+                .coerceIn(0, (screenHeight - touchHeight).coerceAtLeast(0))
+            title = "Lyricon floating control"
+        }
+        runCatching {
+            if (controlAttached) {
+                val previous = handle.layoutParams as? WindowManager.LayoutParams
+                if (previous?.x != params.x || previous.y != params.y ||
+                    previous.width != params.width || previous.height != params.height) {
+                    wm.updateViewLayout(handle, params)
+                }
+            }
+            else {
+                wm.addView(handle, params)
+                controlAttached = true
+            }
+        }.onFailure { YLog.error(TAG, "Update floating control failed", it) }
     }
 
     private fun shouldUseCoverTextColor(style: LyricStyle): Boolean {
@@ -280,7 +325,7 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
         return WindowManager.LayoutParams().apply {
             type = WINDOW_TYPE_APPLICATION_OVERLAY
             format = PixelFormat.TRANSLUCENT
-            flags = resolveWindowFlags()
+            flags = WINDOW_FLAGS
             width = resolveFloatingWindowWidth(style)
             height = WindowManager.LayoutParams.WRAP_CONTENT
             applyLayoutPosition(this, style)
@@ -343,8 +388,4 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
      */
     private const val WINDOW_FLAGS = 312
 
-    /**
-     * 去掉 FLAG_NOT_TOUCHABLE，用于需要响应双击的「时钟/歌词」切换。
-     */
-    private const val WINDOW_FLAGS_TOUCHABLE = 296
 }

@@ -14,6 +14,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -30,6 +32,10 @@ import io.github.proify.lyricon.app.R
 import io.github.proify.lyricon.app.compose.AppToolBarListContainer
 import io.github.proify.lyricon.app.compose.IconActions
 import io.github.proify.lyricon.app.compose.preference.rememberBooleanPreference
+import io.github.proify.lyricon.app.compose.preference.rememberStringPreference
+import io.github.proify.lyricon.app.bridge.AppBridge.MusicTagPrefs
+import io.github.proify.lyricon.app.bridge.AudioOpenApps
+import io.github.proify.lyricon.app.util.LyricPrefs
 import io.github.proify.lyricon.app.event.SettingChangedEvent
 import io.github.proify.lyricon.app.util.AppLangUtils
 import io.github.proify.lyricon.app.util.AppThemeUtils
@@ -136,7 +142,44 @@ class SettingsActivity : BaseActivity() {
                     BackupSetting(onBackupExport, onBackupImport)
                 }
             }
+            item("music_tags") {
+                SettingsSectionCard(topPadding = 16.dp) {
+                    MusicTagAppSetting()
+                }
+            }
         }
+    }
+
+    @Composable
+    private fun MusicTagAppSetting() {
+        val context = LocalContext.current
+        var selected by rememberStringPreference(
+            LyricPrefs.basicStylePrefs, MusicTagPrefs.KEY_DEFAULT_COMPONENT, ""
+        )
+        var apps by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+        LaunchedEffect(context) {
+            apps = withContext(Dispatchers.IO) {
+                val pm = context.packageManager
+                AudioOpenApps.query(pm).map {
+                    AudioOpenApps.component(it).flattenToString() to it.loadLabel(pm).toString()
+                }
+            }
+        }
+        val choices = buildList {
+            add("" to DropdownItem(title = stringResource(R.string.option_music_tags_ask)))
+            if (!selected.isNullOrEmpty() && apps.none { it.first == selected }) {
+                add(selected.orEmpty() to DropdownItem(title = stringResource(R.string.option_music_tags_unavailable)))
+            }
+            apps.forEach { (component, label) -> add(component to DropdownItem(title = label)) }
+        }
+        OverlaySpinnerPreference(
+            startAction = { IconActions(painterResource(R.drawable.ic_music_note)) },
+            title = stringResource(R.string.item_music_tags_default_app),
+            summary = stringResource(R.string.item_music_tags_default_app_summary),
+            items = choices.map { it.second },
+            selectedIndex = choices.indexOfFirst { it.first == selected.orEmpty() }.coerceAtLeast(0),
+            onSelectedIndexChange = { selected = choices[it].first }
+        )
     }
 
     @Composable

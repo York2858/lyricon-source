@@ -30,7 +30,7 @@ object LyricDataProcessor {
 
     /** AI 配置提供者 */
     private val aiConfigProvider: AiConfigProvider by lazy {
-        AiConfigProviderImpl(LyricPrefs.baseStylePrefs)
+        AiConfigProviderImpl(LyricPrefs.baseStylePrefs) { LyricPrefs.baseStylePrefs }
     }
 
     /** 注册后置加工插件列表 */

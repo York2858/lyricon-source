@@ -18,7 +18,6 @@ import androidx.core.view.doOnAttach
 import androidx.core.view.isVisible
 import io.github.proify.android.extensions.dp
 import io.github.proify.android.extensions.isLandScape
-import io.github.proify.lyricon.app.bridge.AppBridge.LyricGesturePrefs
 import io.github.proify.lyricon.colorextractor.palette.ColorExtractor
 import io.github.proify.lyricon.colorextractor.palette.ColorPaletteResult
 import io.github.proify.lyricon.common.util.ResourceMapper
@@ -31,6 +30,7 @@ import io.github.proify.lyricon.statusbarlyric.StatusColor
 import io.github.proify.lyricon.xposed.logger.YLog
 import io.github.proify.lyricon.xposed.systemui.hook.ClockViewFinder
 import io.github.proify.lyricon.xposed.systemui.hook.OplusCapsuleHooker
+import io.github.proify.lyricon.xposed.systemui.hook.StatusBarLyricTouchRouter
 import io.github.proify.lyricon.xposed.systemui.hook.StatusBarColorMonitor
 import io.github.proify.lyricon.xposed.systemui.lyric.LyricViewController.isPlaying
 import io.github.proify.lyricon.xposed.systemui.lyric.control.LyricControlPopup
@@ -59,16 +59,6 @@ class StatusBarViewController(
     val visibilityController: ViewVisibilityController = ViewVisibilityController(statusBarView)
     val lyricView: StatusBarLyric by lazy { createLyricView(currentLyricStyle) }
 
-    // --- 手势控制状态 (随偏好热更新) ---
-    private var gestureEnabled: Boolean = LyricGesturePrefs.DEFAULT_ENABLED
-
-    /** 双击切换「状态栏歌词 / 悬浮窗歌词」（悬浮窗基础配置开关） */
-    private var doubleTapSwitchMode: Boolean = false
-    private var swipeLeftAction: Int = LyricGesturePrefs.DEFAULT_SWIPE_LEFT
-    private var swipeRightAction: Int = LyricGesturePrefs.DEFAULT_SWIPE_RIGHT
-    private var tapAction: Int = LyricGesturePrefs.DEFAULT_TAP
-    private var longPressAction: Int = LyricGesturePrefs.DEFAULT_LONG_PRESS
-
     private var lastAnchor = ""
     private var lastInsertionOrder = -1
     private var internalRemoveLyricViewFlag = false
@@ -91,6 +81,7 @@ class StatusBarViewController(
 
     private val onGlobalLayoutListener = ViewTreeObserver.OnGlobalLayoutListener {
         applyVisibilityRulesNow()
+        StatusBarLyricTouchRouter.updateTouchBounds(this)
 //        // 无副作用复核:布局事件也是状态栏颜色可能的变更时机(补救观察点)
 //        StatusBarColorMonitor.refresh()
     }
@@ -106,18 +97,24 @@ class StatusBarViewController(
 
         // 手势控制:读取偏好并绑定回调,手势动作可配置
         refreshGestureConfig()
-        lyricView.gestureListener = { gesture -> onLyricGesture(gesture) }
+        lyricView.gestureListener = { gesture ->
+            LyricGestureActions.dispatch(gesture, gestureTouchAnchor() ?: lyricView)
+        }
 
         StatusBarColorMonitor.bindStatusBar(statusBarView)
         colorMonitorView = getClockView()
         StatusBarColorMonitor.bindClockView(colorMonitorView)
         StatusBarColorMonitor.addListener(colorChangeListener)
 
-        statusBarView.doOnAttach { checkLyricViewExists() }
+        statusBarView.doOnAttach {
+            checkLyricViewExists()
+            StatusBarLyricTouchRouter.register(this)
+        }
         YLog.info(tag = TAG, "Lyric view created for $statusBarView")
     }
 
     fun onDestroy() {
+        StatusBarLyricTouchRouter.unregister(this)
         coverJob?.cancel()
         statusBarView.removeOnAttachStateChangeListener(statusBarAttachListener)
         statusBarView.viewTreeObserver.removeOnGlobalLayoutListener(onGlobalLayoutListener)
@@ -299,9 +296,29 @@ class StatusBarViewController(
 
     private fun getClockView(): View? = ClockViewFinder.find(statusBarView)
 
+    internal fun gestureClockAnchor(): View? = getClockView()?.takeIf { it.isShown }
+
+    internal fun canRouteGestures(): Boolean =
+        lyricView.gestureEnabled && !lyricView.isHideOnLockScreen()
+
+    internal fun needsGestureRecoveryArea(): Boolean =
+        !isPlaying || !LyricPrefs.baseStyle.lyricsEnabled ||
+                LyricPrefs.floatingBaseStyle.manualFloatingLyricEnabled
+
+    internal fun gestureTouchAnchor(): View? {
+        if (!canRouteGestures()) return null
+        if (lyricView.isShown && !lyricView.isDisabledVisible) return lyricView
+        // Keep the same gestures available after pause, hiding lyrics or switching to floating mode.
+        if (needsGestureRecoveryArea()) {
+            return getClockView()?.takeIf { it.isShown }
+        }
+        return null
+    }
+
     private var wasPlayingBeforeVisibilityUpdate: Boolean = false
 
     fun computeShouldApplyPlayingRules(): Boolean {
+        if (!LyricPrefs.baseStyle.lyricsEnabled) return false
         if (LyricPrefs.floatingBaseStyle.manualFloatingLyricEnabled) return false
         return isPlaying && when {
             lyricView.isDisabledVisible -> !lyricView.isHideOnLockScreen()
@@ -336,72 +353,12 @@ class StatusBarViewController(
 
     // --- 手势控制 ---
 
-    /**
-     * 从偏好刷新手势配置,并同步视图的手势开关与点击行为。
-     *
-     * 手势关闭时保留旧版"单击打开控制面板"的行为(通过点击监听器委托)。
-     */
+    /** Refresh gesture switches; actions use the shared mapping at dispatch time. */
     internal fun refreshGestureConfig() {
-        gestureEnabled = LyricPrefs.gestureEnabled
-        doubleTapSwitchMode = LyricPrefs.floatingBaseStyle.floatingDoubleTapSwitchClock
-        swipeLeftAction = LyricPrefs.gestureAction(
-            LyricGesturePrefs.KEY_SWIPE_LEFT,
-            LyricGesturePrefs.DEFAULT_SWIPE_LEFT
-        )
-        swipeRightAction = LyricPrefs.gestureAction(
-            LyricGesturePrefs.KEY_SWIPE_RIGHT,
-            LyricGesturePrefs.DEFAULT_SWIPE_RIGHT
-        )
-        tapAction = LyricPrefs.gestureAction(
-            LyricGesturePrefs.KEY_TAP,
-            LyricGesturePrefs.DEFAULT_TAP
-        )
-        longPressAction = LyricPrefs.gestureAction(
-            LyricGesturePrefs.KEY_LONG_PRESS,
-            LyricGesturePrefs.DEFAULT_LONG_PRESS
-        )
-
-        lyricView.gestureEnabled = gestureEnabled || doubleTapSwitchMode
+        lyricView.gestureEnabled = LyricPrefs.gestureEnabled
         lyricView.hapticEnabled = LyricPrefs.gestureHapticEnabled
-        if (gestureEnabled) {
-            lyricView.setOnClickListener(null)
-        } else {
-            lyricView.setOnClickListener { v ->
-                LyricControlPopup.show(v)
-            }
-        }
-        // setOnClickListener(null) 会关闭 clickable,这里恢复以保持手势模式下的点击语义(无障碍)
-        lyricView.isClickable = true
-    }
-
-    /**
-     * 手势回调入口:根据当前配置将手势映射为动作并执行
-     */
-    private fun onLyricGesture(gesture: StatusBarLyric.GestureType) {
-        // 双击切换「状态栏歌词 / 悬浮窗歌词」独立于状态栏手势总开关
-        if (gesture == StatusBarLyric.GestureType.DOUBLE_TAP) {
-            if (doubleTapSwitchMode) FloatingLyricController.toggleLyricDisplayMode()
-            return
-        }
-
-        if (!gestureEnabled) return
-
-        val action = when (gesture) {
-            StatusBarLyric.GestureType.SWIPE_LEFT -> swipeLeftAction
-            StatusBarLyric.GestureType.SWIPE_RIGHT -> swipeRightAction
-            StatusBarLyric.GestureType.TAP -> tapAction
-            StatusBarLyric.GestureType.LONG_PRESS -> longPressAction
-            StatusBarLyric.GestureType.DOUBLE_TAP -> return
-        }
-
-        when (action) {
-            LyricGesturePrefs.ACTION_NONE -> Unit
-            LyricGesturePrefs.ACTION_TOGGLE_PLAY -> PlaybackControl.togglePlay()
-            LyricGesturePrefs.ACTION_PREVIOUS -> PlaybackControl.previous()
-            LyricGesturePrefs.ACTION_NEXT -> PlaybackControl.next()
-            LyricGesturePrefs.ACTION_OPEN_CONTROL -> LyricControlPopup.show(lyricView)
-            else -> YLog.warning(TAG, "Unknown gesture action: $action")
-        }
+        lyricView.setOnClickListener(null)
+        lyricView.isClickable = lyricView.gestureEnabled
     }
 
     fun highlightView(idName: String?) {
@@ -437,8 +394,8 @@ class StatusBarViewController(
     }
 
     private val statusBarAttachListener = object : View.OnAttachStateChangeListener {
-        override fun onViewAttachedToWindow(v: View) {}
-        override fun onViewDetachedFromWindow(v: View) {}
+        override fun onViewAttachedToWindow(v: View) { StatusBarLyricTouchRouter.register(this@StatusBarViewController) }
+        override fun onViewDetachedFromWindow(v: View) { StatusBarLyricTouchRouter.unregister(this@StatusBarViewController) }
     }
 
     override fun onScreenOn() {

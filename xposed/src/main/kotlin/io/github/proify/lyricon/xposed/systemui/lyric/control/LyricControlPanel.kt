@@ -34,6 +34,7 @@ import io.github.proify.android.extensions.dp
 import io.github.proify.android.extensions.sp
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.xposed.BuildConfig
+import io.github.proify.lyricon.xposed.R
 import io.github.proify.lyricon.xposed.systemui.lyric.control.LyricControlPanel.Companion.NO_SEEK_TARGET
 import io.github.proify.lyricon.xposed.systemui.util.MediaTrackMeta
 import kotlin.math.abs
@@ -43,7 +44,7 @@ import kotlin.math.abs
  *
  * 布局结构（全部代码构建，运行在 SystemUI 进程内）：
  *  [封面] [歌名/歌手 + 进度条 + 时间行]
- *  [占位] [上一首] [播放/暂停] [下一首] [AI]
+ *  [音乐标签] [上一首] [播放/暂停] [下一首] [AI]
  *
  * 面板持有全部子视图引用并封装更新方法（歌曲、进度、封面、背景取色），
  * 交互则通过 [ActionListener] 回抛给宿主（[LyricControlPopup]）。
@@ -62,6 +63,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         fun onNext()
         fun onSeekTo(position: Long)
         fun onAiExplain(button: View)
+        fun onMusicTags(button: View)
     }
 
     var actionListener: ActionListener? = null
@@ -85,6 +87,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
     private val playButton: ImageView
     private val nextButton: ImageView
     private val aiButton: ImageView
+    private val musicTagsButton: ImageView
 
     /** 模块（宿主 App）Resources，用于加载自带图标。 */
     private val moduleRes: Resources = ControlUi.moduleResources(context)
@@ -228,6 +231,15 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
             )
             setOnTouchListener(ControlUi.pressFeedbackListener())
             setOnClickListener { actionListener?.onNext() }
+        }
+
+        musicTagsButton = ImageView(context).apply {
+            setImageDrawable(moduleRes.getDrawable(drawableId("sui_control_music_tag"), context.theme))
+            setPadding(7.dp)
+            contentDescription = moduleRes.getString(R.string.control_music_tags)
+            tooltipText = contentDescription
+            setOnTouchListener(ControlUi.pressFeedbackListener())
+            setOnClickListener { v -> actionListener?.onMusicTags(v) }
         }
 
         aiButton = ImageView(context).apply {
@@ -575,7 +587,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
     }
 
     /**
-     * 操作按钮行：左边占位、上一首、播放/暂停、下一首均分宽度，
+     * 操作按钮行：音乐标签、上一首、播放/暂停、下一首均分宽度，
      * 右下圆形 AI 图标独立最右，与参考图布局一致。
      */
     private fun buildActionRow() {
@@ -584,7 +596,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
             gravity = Gravity.CENTER
             setPadding(0, ACTION_ROW_TOP_PADDING_DP.dp, 0, 0)
         }
-        addActionSlot(row, View(context)) // 左侧占位
+        addActionSlot(row, musicTagsButton)
         addActionSlot(row, previousButton)
         addActionSlot(row, playButton)
         addActionSlot(row, nextButton)

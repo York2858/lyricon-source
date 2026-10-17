@@ -90,6 +90,13 @@ class SuperLogo(context: Context) : ImageView(context) {
             updateVisibility()
         }
 
+    /** 是否响应 ColorOS 流体云胶囊状态隐藏图标（悬浮窗模式关闭） */
+    var capsuleHideEnabled: Boolean = true
+        set(value) {
+            field = value
+            updateVisibility()
+        }
+
     var activePackage: String? = null
 
     init {
@@ -261,7 +268,7 @@ class SuperLogo(context: Context) : ImageView(context) {
         val isEnabled = logoConfig?.enable == true
         val isEffective = strategy?.isEffective == true
         val isHideInCapsule =
-            logoConfig?.hideInColorOSCapsuleMode == true && isOplusCapsuleShowing
+            capsuleHideEnabled && logoConfig?.hideInColorOSCapsuleMode == true && isOplusCapsuleShowing
 
         this.isVisibleIfChanged = !isHideInCapsule && isEnabled && isEffective && !forceHide
     }

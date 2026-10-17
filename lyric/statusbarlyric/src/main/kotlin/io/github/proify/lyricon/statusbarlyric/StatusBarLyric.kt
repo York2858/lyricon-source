@@ -12,7 +12,6 @@ import android.app.KeyguardManager
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Handler
-import android.os.SystemClock
 import android.util.Log
 import android.view.GestureDetector
 import android.view.Gravity
@@ -77,8 +76,6 @@ class StatusBarLyric(
         private const val SWIPE_KICK_MS = 70L
         private const val SWIPE_RETURN_MS = 190L
 
-        /** 双击判定窗口(ms):两次点击间隔在该值内视为双击 */
-        private const val DOUBLE_TAP_TIMEOUT_MS = 400L
     }
 
     /**
@@ -97,10 +94,7 @@ class StatusBarLyric(
         TAP,
 
         /** 长按 */
-        LONG_PRESS,
-
-        /** 双击 */
-        DOUBLE_TAP
+        LONG_PRESS
     }
 
     // --- 手势控制 ---
@@ -134,9 +128,6 @@ class StatusBarLyric(
     private var gestureDownY: Float = 0f
     private var gestureLongPressFired: Boolean = false
 
-    /** 上次点击抬起时间,用于自实现的单击/双击判定 */
-    private var lastTapUpTime: Long = 0L
-
     private val gestureDetector = GestureDetector(
         context,
         object : GestureDetector.SimpleOnGestureListener() {
@@ -144,7 +135,6 @@ class StatusBarLyric(
 
             override fun onLongPress(e: MotionEvent) {
                 gestureLongPressFired = true
-                lastTapUpTime = 0L
                 // 长按:放大提示 + 触觉反馈(可关闭)
                 intensifyPressFeedback()
                 triggerHaptic(HapticFeedbackConstants.LONG_PRESS)
@@ -353,9 +343,9 @@ class StatusBarLyric(
         isPlaying = playing
         onPlayingChanged?.invoke(playing)
 
-        if (!playing) {
-            textView.reset()
-        } else {
+        // Playback and song callbacks arrive independently while skipping tracks.
+        // Preserve the current frame across a transient pause instead of replaying the old song.
+        if (playing && textView.childCount == 0) {
             when (lyricType) {
                 NONE -> Unit
                 SONG -> setSong(lastSong)
@@ -475,7 +465,6 @@ class StatusBarLyric(
                 // 手动滑动判定:不依赖 Fling 速度,慢速横向拖拽同样生效;
                 // 长按已触发时不再判定滑动,避免一次手势同时触发两个动作
                 if (!gestureLongPressFired && abs(dx) > swipeThreshold && abs(dx) > abs(dy) * 1.5f) {
-                    lastTapUpTime = 0L
                     playSwipeFeedback(dx)
                     triggerHaptic(HapticFeedbackConstants.KEYBOARD_TAP)
                     gestureListener?.invoke(
@@ -483,7 +472,7 @@ class StatusBarLyric(
                     )
                 } else {
                     releasePressFeedback()
-                    // 未长按且位移在容差内视为点击,统一走自实现的单击/双击判定
+                    // 未长按且位移在容差内视为点击。
                     if (!gestureLongPressFired && abs(dx) <= touchSlop && abs(dy) <= touchSlop) {
                         handleTapUp()
                     }
@@ -498,23 +487,7 @@ class StatusBarLyric(
         return gestureDetector.onTouchEvent(event)
     }
 
-    /**
-     * 单击 / 双击统一判定。
-     *
-     * 不依赖 [GestureDetector] 的双击识别:系统在识别到双击时不会为第二次点击派发
-     * 单击事件,导致上层无法通过"连续两次单击"判定双击;此处自行记录上次抬起时间,
-     * 保证一次双击只派发一个 [GestureType.DOUBLE_TAP],避免重复触发。
-     */
     private fun handleTapUp() {
-        val now = SystemClock.uptimeMillis()
-        if (lastTapUpTime != 0L && now - lastTapUpTime <= DOUBLE_TAP_TIMEOUT_MS) {
-            lastTapUpTime = 0L
-            triggerHaptic(HapticFeedbackConstants.KEYBOARD_TAP)
-            gestureListener?.invoke(GestureType.DOUBLE_TAP)
-            return
-        }
-
-        lastTapUpTime = now
         triggerHaptic(HapticFeedbackConstants.KEYBOARD_TAP)
         performClick()
         gestureListener?.invoke(GestureType.TAP)

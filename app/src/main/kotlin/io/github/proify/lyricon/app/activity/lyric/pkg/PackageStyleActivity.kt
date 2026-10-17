@@ -307,7 +307,7 @@ private fun StyleContentPager(
 
         when (page) {
             0 -> TextPage(scrollBehavior, sharedPreferences)
-            1 -> LogoPage(scrollBehavior, sharedPreferences)
+            1 -> LogoPage(scrollBehavior, sharedPreferences, showCapsuleHideOption = true)
             2 -> AnimPage(scrollBehavior, sharedPreferences)
         }
     }

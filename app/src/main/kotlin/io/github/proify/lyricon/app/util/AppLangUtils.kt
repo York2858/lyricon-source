@@ -8,7 +8,7 @@ package io.github.proify.lyricon.app.util
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.ContextWrapper
+import android.content.res.Configuration
 import io.github.proify.android.extensions.defaultSharedPreferences
 import io.github.proify.lyricon.app.LyriconApp
 import io.github.proify.lyricon.app.activity.lyric.pkg.sheet.AppCache
@@ -45,11 +45,11 @@ object AppLangUtils {
     private fun wrapContext(context: Context, language: String): Context {
         val locale = forLanguageTag(language)
 
-        val config = context.resources.configuration
+        val config = Configuration(context.resources.configuration)
         config.setLocale(locale)
 
-        val newContext = context.createConfigurationContext(config)
-        return Cold(newContext)
+        // Application's base context must remain a ContextImpl: Android uses it to create receivers.
+        return context.createConfigurationContext(config)
     }
 
     fun getCustomizeLang(context: Context): String =
@@ -65,5 +65,4 @@ object AppLangUtils {
         AppCache.clearLabelCache()
     }
 
-    class Cold(base: Context) : ContextWrapper(base)
 }

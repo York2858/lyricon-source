@@ -154,8 +154,8 @@
     <string name="module_tag_translation">翻譯</string>
     <string name="no_provider_available">沒有可用的歌詞提供服務</string>
     <string name="item_base_lockscreen_hidden">在鎖定畫面隱藏</string>
-    <string name="item_base_double_tap_switch_clock">雙擊切換歌詞顯示模式</string>
-    <string name="item_base_double_tap_switch_clock_summary">開啟後雙擊狀態欄可在狀態欄歌詞與懸浮窗歌詞之間切換。</string>
+    <string name="item_floating_control">懸浮歌詞獨立操作點</string>
+    <string name="item_floating_control_summary">歌詞保持觸控穿透。懸浮歌詞圖示接收點擊、長按和左右滑動，動作使用基礎設定中的手勢設定。</string>
     <string name="tile_manual_floating_lyric">懸浮窗歌詞</string>
     <string name="option_provider_list_full">完整</string>
     <string name="option_provider_list_short">精簡</string>
@@ -288,6 +288,12 @@
     <string name="option_gesture_previous">上一曲</string>
     <string name="option_gesture_next">下一曲</string>
     <string name="option_gesture_open_control">開啟控制面板</string>
+    <string name="option_gesture_switch_lyric_mode">切換歌詞（狀態列 / 懸浮窗）</string>
+    <string name="option_gesture_toggle_lyrics">開關歌詞</string>
+    <string name="item_lyrics_enabled">顯示歌詞</string>
+    <string name="item_lyrics_enabled_summary">同時控制狀態列與懸浮歌詞。使用手勢關閉後，可在此重新開啟。</string>
+    <string name="message_lyrics_disabled">歌詞已關閉，可在基礎設定中重新開啟</string>
+    <string name="item_gesture_shared_summary">狀態列歌詞與懸浮操作點共用以下動作設定。</string>
     <string name="item_gesture_haptic">震動回饋</string>
     <string name="item_gesture_haptic_summary">手勢識別成功時震動，可關閉。</string>
     <string name="item_base_width_in_landscape">寬度（橫向模式下）</string>
@@ -297,4 +303,8 @@
     <string name="item_ai_config_description">備註</string>
     <string name="dialog_summary_ai_config_description">配置備註</string>
     <string name="not_configured">未設定</string>
+    <string name="item_music_tags_default_app">預設開啟應用程式</string>
+    <string name="item_music_tags_default_app_summary">控制面板左側按鈕使用此應用程式開啟目前歌曲的本機音訊</string>
+    <string name="option_music_tags_ask">每次詢問</string>
+    <string name="option_music_tags_unavailable">已選應用程式無法使用，請重新選擇</string>
 </resources>

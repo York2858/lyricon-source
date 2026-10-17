@@ -7,10 +7,14 @@
 package io.github.proify.lyricon.xposed.systemui.lyric
 
 import android.util.Log
+import android.media.MediaMetadata
+import android.media.session.MediaController
 import io.github.proify.lyricon.lyric.model.Song
+import io.github.proify.lyricon.lyric.style.LyricStyle
 import io.github.proify.lyricon.subscriber.ActivePlayerListener
 import io.github.proify.lyricon.subscriber.ProviderInfo
 import io.github.proify.lyricon.xposed.systemui.lyric.processor.LyricDataProcessor
+import io.github.proify.lyricon.xposed.systemui.util.SystemUIMediaUtils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,11 +40,50 @@ object LyricDataHub : ActivePlayerListener {
     /** 缓存当前的原始歌曲，用于配置变更时重走流程 */
     private var cachedRawSong: Song? = null
 
+    /** Shared enhanced lyrics, before display-only transformations such as translation-only. */
+    private var cachedEnrichedSong: Song? = null
+
     /** 当前执行中的流水线任务 */
     private var activePipelineJob: Job? = null
 
     /** 当前活动的提供者信息 */
     private var providerInfo: ProviderInfo? = null
+
+    private val trackProgressGate = TrackProgressGate()
+    private var pendingPublication = false
+    private var pendingSourceSong = false
+    private var playing = false
+
+    private val sourceMetadataFallback = Runnable {
+        if (pendingSourceSong) {
+            // Some providers update lyrics before (or without) updating MediaSession metadata.
+            // Never discard their latest lyrics or leave the display stalled indefinitely.
+            trackProgressGate.reset()
+            trackProgressGate.acceptLyrics(cachedRawSong?.name, cachedRawSong?.artist)
+            pendingSourceSong = false
+            runProcessingPipeline(cachedRawSong)
+        }
+    }
+
+    val isWaitingForTrack: Boolean
+        get() = pendingPublication || trackProgressGate.waitingForLyrics
+
+    init {
+        SystemUIMediaUtils.registerListener(object : SystemUIMediaUtils.MediaControllerCallback {
+            override fun onMediaChanged(controller: MediaController, metadata: MediaMetadata) {
+                if (controller.packageName != providerInfo?.playerPackageName) return
+                updateMediaTrack(metadata)
+                if (pendingSourceSong) processCurrentSourceSong()
+            }
+        })
+    }
+
+    private fun updateMediaTrack(metadata: MediaMetadata?) {
+        trackProgressGate.updateMedia(
+            metadata?.getString(MediaMetadata.METADATA_KEY_TITLE),
+            metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)
+        )
+    }
 
     fun addListener(listener: ActivePlayerListener) {
         listeners.add(listener)
@@ -58,37 +101,33 @@ object LyricDataHub : ActivePlayerListener {
     private fun runProcessingPipeline(rawSong: Song?) {
         val currentVersion = versionCounter.incrementAndGet()
         activePipelineJob?.cancel()
+        pendingPublication = true
 
         activePipelineJob = scope.launch {
             try {
                 val song = rawSong?.deepCopy()
                 if (song == null) {
-                    if (isCurrentVersion(currentVersion)) dispatchSong(null)
+                    publishSong(null, currentVersion)
                     return@launch
                 }
 
-                // 悬浮窗与状态栏歌词互斥显示：悬浮窗模式下展示加工应以悬浮窗样式为准，
-                // 否则「仅显示翻译」等展示配置在悬浮窗下不生效。
-                val style = if (LyricPrefs.floatingBaseStyle.manualFloatingLyricEnabled) {
-                    LyricPrefs.floatingLyricStyle
-                } else {
-                    LyricPrefs.getLyricStyle()
-                }
+                // AI translation is configured globally in AI Lab, independently of display mode.
+                val processingStyle = LyricPrefs.getLyricStyle()
 
                 // 1. 后台前置加工：处理繁简、屏蔽词等基础显示数据
                 val preProcessed = LyricDataProcessor.executePreProcessing(song)
                 if (!isCurrentVersion(currentVersion)) return@launch
 
                 // 第一次分发：基础处理完成后尽快刷新 UI
-                dispatchSong(LyricDataProcessor.executeDisplayProcessing(preProcessed, style))
+                publishSong(preProcessed, currentVersion)
 
                 // 2. 后台后置流水线：处理 AI 翻译等耗时扩展
                 val finalSong =
-                    LyricDataProcessor.executePostProcessingPipeline(preProcessed, style)
+                    LyricDataProcessor.executePostProcessingPipeline(preProcessed, processingStyle)
 
                 if (finalSong === preProcessed) return@launch
                 if (isCurrentVersion(currentVersion)) {
-                    dispatchSong(LyricDataProcessor.executeDisplayProcessing(finalSong, style))
+                    publishSong(finalSong, currentVersion)
                 } else {
                     logOutdatedPipeline(currentVersion, finalSong)
                 }
@@ -102,6 +141,29 @@ object LyricDataHub : ActivePlayerListener {
 
     private fun isCurrentVersion(version: Int): Boolean = version == versionCounter.get()
 
+    private fun currentDisplayStyle(): LyricStyle =
+        if (LyricPrefs.floatingBaseStyle.manualFloatingLyricEnabled) LyricPrefs.floatingLyricStyle
+        else LyricPrefs.getLyricStyle()
+
+    private fun publishSong(song: Song?, version: Int) {
+        StatusBarViewManager.runOnMainThread {
+            if (!isCurrentVersion(version)) return@runOnMainThread
+            if (trackProgressGate.waitingForLyrics) return@runOnMainThread
+            cachedEnrichedSong = song
+            pendingPublication = false
+            dispatchSong(song?.let { LyricDataProcessor.executeDisplayProcessing(it, currentDisplayStyle()) })
+            listeners.forEach { it.onPlaybackStateChanged(playing) }
+        }
+    }
+
+    /** Reuse the completed translation and current position when only the display location changes. */
+    fun refreshDisplayForMode() {
+        if (isWaitingForTrack) return
+        val song = cachedEnrichedSong ?: return
+        dispatchSong(LyricDataProcessor.executeDisplayProcessing(song, currentDisplayStyle()))
+        LyricViewController.restoreCurrentPosition()
+    }
+
     private fun logOutdatedPipeline(version: Int, song: Song) {
         Log.d(
             TAG,
@@ -114,14 +176,36 @@ object LyricDataHub : ActivePlayerListener {
      * 当配置（繁简、AI 开关、翻译模式）变更时调用，无需切歌即可应用新设置。
      */
     fun reprocessCurrentSong() {
-        runProcessingPipeline(cachedRawSong)
+        StatusBarViewManager.runOnMainThread { runProcessingPipeline(cachedRawSong) }
     }
 
     // --- ActivePlayerListener 触发点 ---
 
     override fun onSongChanged(song: Song?) {
-        this.cachedRawSong = song?.deepCopy()
-        runProcessingPipeline(cachedRawSong)
+        StatusBarViewManager.runOnMainThread {
+            // Consult unmodified source metadata; display conversion may change a song title.
+            updateMediaTrack(SystemUIMediaUtils.getController(providerInfo?.playerPackageName)?.metadata)
+            activePipelineJob?.cancel()
+            versionCounter.incrementAndGet()
+            this.cachedRawSong = song?.deepCopy()
+            processCurrentSourceSong()
+        }
+    }
+
+    private fun processCurrentSourceSong() {
+        val song = cachedRawSong
+        val accepted = trackProgressGate.acceptLyrics(song?.name, song?.artist)
+        if (!accepted || trackProgressGate.waitingForLyrics) {
+            Log.i(TAG, "Waiting for media/lyric track agreement: ${song?.name}")
+            pendingPublication = true
+            pendingSourceSong = true
+            StatusBarViewManager.mainHandler.removeCallbacks(sourceMetadataFallback)
+            StatusBarViewManager.mainHandler.postDelayed(sourceMetadataFallback, 750L)
+            return
+        }
+        pendingSourceSong = false
+        StatusBarViewManager.mainHandler.removeCallbacks(sourceMetadataFallback)
+        runProcessingPipeline(song)
     }
 
     private var lastDispatchSongId = 0
@@ -142,15 +226,22 @@ object LyricDataHub : ActivePlayerListener {
     }
 
     override fun onPlaybackStateChanged(isPlaying: Boolean) {
-        listeners.forEach { it.onPlaybackStateChanged(isPlaying) }
+        StatusBarViewManager.runOnMainThread {
+            playing = isPlaying
+            if (!isWaitingForTrack) listeners.forEach { it.onPlaybackStateChanged(isPlaying) }
+        }
     }
 
     override fun onPositionChanged(position: Long) {
-        listeners.forEach { it.onPositionChanged(position) }
+        StatusBarViewManager.runOnMainThread {
+            if (!isWaitingForTrack) listeners.forEach { it.onPositionChanged(position) }
+        }
     }
 
     override fun onSeekTo(position: Long) {
-        listeners.forEach { it.onSeekTo(position) }
+        StatusBarViewManager.runOnMainThread {
+            if (!isWaitingForTrack) listeners.forEach { it.onSeekTo(position) }
+        }
     }
 
     override fun onDisplayTranslationChanged(isDisplayTranslation: Boolean) {
@@ -162,7 +253,18 @@ object LyricDataHub : ActivePlayerListener {
     }
 
     override fun onActiveProviderChanged(providerInfo: ProviderInfo?) {
-        this.providerInfo = providerInfo
-        listeners.forEach { it.onActiveProviderChanged(providerInfo) }
+        StatusBarViewManager.runOnMainThread {
+            this.providerInfo = providerInfo
+            trackProgressGate.reset()
+            activePipelineJob?.cancel()
+            versionCounter.incrementAndGet()
+            pendingPublication = false
+            pendingSourceSong = false
+            StatusBarViewManager.mainHandler.removeCallbacks(sourceMetadataFallback)
+            cachedRawSong = null
+            cachedEnrichedSong = null
+            lastDispatchSongId = 0
+            listeners.forEach { it.onActiveProviderChanged(providerInfo) }
+        }
     }
 }

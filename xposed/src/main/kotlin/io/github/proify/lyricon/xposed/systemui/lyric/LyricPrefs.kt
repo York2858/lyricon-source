@@ -6,9 +6,7 @@
 
 package io.github.proify.lyricon.xposed.systemui.lyric
 
-import android.R.attr.name
 import android.content.SharedPreferences
-import android.os.Looper
 import android.util.Log
 import io.github.proify.lyricon.app.bridge.AppBridge
 import io.github.proify.lyricon.app.bridge.AppBridge.LyricGesturePrefs
@@ -19,6 +17,7 @@ import io.github.proify.lyricon.lyric.style.LyricStyle
 import io.github.proify.lyricon.lyric.style.PackageStyle
 import io.github.proify.lyricon.xposed.ModuleEntry
 import io.github.proify.lyricon.xposed.systemui.SystemUIHooker
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 歌词样式偏好管理器
@@ -47,18 +46,27 @@ object LyricPrefs {
      * 内部的主线程分发执行视图操作，不能在此直接触碰 View。
      */
     private val globalSharedPreferenceChangeListener: SharedPreferences.OnSharedPreferenceChangeListener =
-        SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-            LyricViewController.applyConfigurationUpdate(getLyricStyle())
-            // 悬浮窗歌词显示模式同步
-            SystemUIHooker.applyLyricMode()
-            Log.i(TAG, "global prefs changed")
+        SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == AppBridge.MusicTagPrefs.KEY_DEFAULT_COMPONENT) return@OnSharedPreferenceChangeListener
+            StatusBarViewManager.runOnMainThread {
+                if (key != BasicStyle.KEY_FLOATING_MODE && key != BasicStyle.KEY_LYRICS_ENABLED) {
+                    LyricViewController.applyConfigurationUpdate(getLyricStyle())
+                }
+                SystemUIHooker.applyLyricMode()
+            }
         }
 
     /* ---------------- base style ---------------- */
 
     /** 基础样式偏好（全局生效） */
-    val baseStylePrefs: StateSharedPreferences =
+    var baseStylePrefs: StateSharedPreferences =
         createPrefs(AppBridge.LyricStylePrefs.PREF_NAME_BASE)
+        private set
+
+    fun reloadBasePrefs() {
+        baseStylePrefs = refreshPrefs(AppBridge.LyricStylePrefs.PREF_NAME_BASE)
+        baseStyle.load(baseStylePrefs)
+    }
 
     /** 基础样式，访问时自动检测变更并重新加载 */
     val baseStyle: BasicStyle = BasicStyle().apply {
@@ -140,16 +148,21 @@ object LyricPrefs {
     /**
      * 强制重新加载悬浮窗相关偏好。
      *
-     * App 进程写入偏好时，SystemUI 进程内的偏好变更监听不会触发（缺少跨进程通知），
-     * 因此收到 App 的桥接通知后需要重建偏好实例，并标记缓存样式强制重载。
+     * 刷新远程数据时复用包装器并解绑旧监听，避免每次切换都增加一个永久监听。
      */
     fun reloadFloatingPrefs() {
         floatingBaseStylePrefs =
-            createPrefs(AppBridge.LyricStylePrefs.PREF_NAME_FLOATING_BASE_STYLE)
+            refreshPrefs(AppBridge.LyricStylePrefs.PREF_NAME_FLOATING_BASE_STYLE)
         floatingPackageStylePrefs =
-            createPrefs(AppBridge.LyricStylePrefs.PREF_NAME_FLOATING_PACKAGE_STYLE)
+            refreshPrefs(AppBridge.LyricStylePrefs.PREF_NAME_FLOATING_PACKAGE_STYLE)
         floatingBaseStyleDirty = true
         floatingPackageStyleDirty = true
+    }
+
+    /** Apply the committed command target after refreshing the remote preference snapshot. */
+    fun applyModeSnapshot(floatingMode: Boolean?, lyricsEnabled: Boolean?) {
+        floatingMode?.let { floatingBaseStyle.manualFloatingLyricEnabled = it }
+        lyricsEnabled?.let { baseStyle.lyricsEnabled = it }
     }
 
     /** 悬浮窗完整样式 */
@@ -208,9 +221,7 @@ object LyricPrefs {
      */
     private fun getPackagePrefs(packageName: String): StateSharedPreferences {
         val prefName = getPackagePrefName(packageName)
-        return prefsCache.getOrPut(prefName) {
-            createPrefs(prefName)
-        }
+        return createPrefs(prefName)
     }
 
     /**
@@ -219,15 +230,17 @@ object LyricPrefs {
      * @param name 偏好文件名
      * @return 封装了远程 SharedPreferences 的 StateSharedPreferences 实例
      */
-    private fun createPrefs(name: String): StateSharedPreferences {
-        val service = ModuleEntry.instance
-        val remotePrefs = service.getRemotePreferences(name)
+    @Synchronized
+    private fun createPrefs(name: String): StateSharedPreferences = prefsCache.getOrPut(name) {
+        StateSharedPreferencesWrapper(ModuleEntry.instance.getRemotePreferences(name),
+            globalSharedPreferenceChangeListener)
+    }
 
-        Log.i(TAG, "remotePrefs: $name, $remotePrefs")
-        return StateSharedPreferencesWrapper(
-            remotePrefs,
-            globalSharedPreferenceChangeListener
-        )
+    @Synchronized
+    private fun refreshPrefs(name: String): StateSharedPreferences {
+        val existing = createPrefs(name) as StateSharedPreferencesWrapper
+        existing.replacePreferences(ModuleEntry.instance.getRemotePreferences(name))
+        return existing
     }
 
     /* ---------------- package style cache ---------------- */
@@ -324,7 +337,7 @@ object LyricPrefs {
      * 封装系统 [SharedPreferences] 并添加变更追踪能力，
      * 当远程偏好发生变化时标记 [isChanged]，并转发给外部监听器
      */
-    private class StateSharedPreferencesWrapper(
+    internal class StateSharedPreferencesWrapper(
         rawPrefs: SharedPreferences,
         private val orderPrefChangeListener: SharedPreferences.OnSharedPreferenceChangeListener
     ) : StateSharedPreferences {
@@ -333,31 +346,31 @@ object LyricPrefs {
          * App 侧数值型配置统一以字符串写入（见 TypedInputPreference），
          * 此处包裹 SafePreferences 以容错读取，避免类型不匹配导致配置（如宽度）不生效。
          */
-        private val prefs: SharedPreferences = rawPrefs.safe()
+        @Volatile private var prefs: SharedPreferences = rawPrefs.safe()
 
         /** 偏好是否已变更的标记 */
-        private var isChanged = false
+        private val isChanged = AtomicBoolean(false)
 
-        init {
-            prefs.registerOnSharedPreferenceChangeListener { p, key ->
-                Log.i(
-                    TAG,
-                    "prefs changed: $name, key=$key, ${Thread.currentThread()},${Looper.myLooper()}"
-                )
-                isChanged = true
-                orderPrefChangeListener.onSharedPreferenceChanged(p, key)
-                Log.i(TAG, "called listener $orderPrefChangeListener")
-            }
+        private val changeListener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+            isChanged.set(true)
+            orderPrefChangeListener.onSharedPreferenceChanged(p, key)
         }
 
-        override fun hasChanged(): Boolean = isChanged
+        init {
+            prefs.registerOnSharedPreferenceChangeListener(changeListener)
+        }
+
+        fun replacePreferences(rawPrefs: SharedPreferences) {
+            prefs.unregisterOnSharedPreferenceChangeListener(changeListener)
+            prefs = rawPrefs.safe()
+            prefs.registerOnSharedPreferenceChangeListener(changeListener)
+            isChanged.set(true)
+        }
+
+        override fun hasChanged(): Boolean = isChanged.get()
 
         override fun reload(): Boolean {
-            if (isChanged) {
-                isChanged = false
-                return true
-            }
-            return false
+            return isChanged.getAndSet(false)
         }
 
         override fun getAll(): Map<String, *> = prefs.all

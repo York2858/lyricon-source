@@ -143,6 +143,9 @@ object AiChatClient {
         val cancellationWatcher = launch(start = CoroutineStart.UNDISPATCHED) {
             try { awaitCancellation() } finally { transport.cancel() }
         }
+        var chunkCount = 0
+        var contentChars = 0
+        var lastFinishReason: String? = null
         try {
             val params = paramsBuilder(configs, systemPrompt, userPrompt).build()
             Log.d(TAG, "Connecting to OpenAI compatible API: $baseUrl (stream=true)")
@@ -151,11 +154,16 @@ object AiChatClient {
             val content = StringBuilder()
             client.withOptions { it.httpClient(transport) }.chat().completions().createStreaming(params).use { respStream ->
                 respStream.stream().forEach { chunk ->
+                    chunkCount++
+                    chunk.choices().firstOrNull()?.finishReason()?.orElse(null)?.let {
+                        lastFinishReason = it.toString()
+                    }
                     val delta = chunk.choices().firstOrNull()
                         ?.let { runCatching { it.delta() }.getOrNull() } ?: return@forEach
                     // 注意：增量必须原样透传（空格/换行/纯标点都是合法内容），
                     // 不能以 isNotBlank 过滤，否则会吞掉空白 token 造成文字粘连。
                     delta.content().ifPresent {
+                        contentChars += it.length
                         content.append(it)
                         onContent(it)
                     }
@@ -171,11 +179,13 @@ object AiChatClient {
                 Log.e(TAG, "Empty content in AI stream response.")
                 null
             } else {
+                Log.i(TAG, "AI stream completed: chunks=$chunkCount, contentChars=$contentChars, finishReason=$lastFinishReason")
                 AiChatStreamResult(reasoning.toString().trim(), finalContent)
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            Log.e(TAG, "AI stream interrupted: chunks=$chunkCount, contentChars=$contentChars, finishReason=$lastFinishReason")
             Log.e(TAG, "AI stream failed: ${e.message}", e)
             null
         } finally {
@@ -284,6 +294,7 @@ object AiChatClient {
                 }
 
                 override fun onResponse(call: Call, response: Response) {
+                    Log.i(TAG, "AI HTTP response: status=${response.code}, protocol=${response.protocol}, contentType=${response.header("Content-Type")}")
                     request.body?.close()
                     if (call.isCanceled()) {
                         response.close()
@@ -291,10 +302,19 @@ object AiChatClient {
                         result.cancel(true)
                         return
                     }
+                    val responseBody = response.body.byteStream()
+                    val responseStream = if (response.header("Content-Type")
+                            ?.substringBefore(';')?.trim()
+                            ?.equals("text/event-stream", ignoreCase = true) == true
+                    ) {
+                        SseTerminalInputStream(responseBody)
+                    } else {
+                        responseBody
+                    }
                     val wrapped = object : HttpResponse {
                         override fun statusCode() = response.code
                         override fun headers() = Headers.builder().putAll(response.headers.toMultimap()).build()
-                        override fun body() = response.body!!.byteStream()
+                        override fun body() = responseStream
                         override fun close() {
                             response.close()
                             synchronized(this@CancellableTransport) { calls.remove(call) }
@@ -316,12 +336,15 @@ object AiChatClient {
         }
 
         override fun close() {
+            // Derived SDK ClientOptions register phantom cleanup and may be collected while
+            // their stream is still being consumed. A request-scoped adapter owns neither
+            // the shared pool nor the request lifetime: our coroutine's finally/cancellation
+            // paths call cancel() explicitly. Only the cached client's adapter owns the pool.
+            if (!closeDelegate) return
             cancel()
-            if (closeDelegate) {
-                delegate.dispatcher.executorService.shutdown()
-                delegate.connectionPool.evictAll()
-                delegate.cache?.close()
-            }
+            delegate.dispatcher.executorService.shutdown()
+            delegate.connectionPool.evictAll()
+            delegate.cache?.close()
         }
     }
 }

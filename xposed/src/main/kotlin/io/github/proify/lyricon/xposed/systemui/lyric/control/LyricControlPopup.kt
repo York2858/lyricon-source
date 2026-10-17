@@ -16,6 +16,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupWindow
+import java.lang.ref.WeakReference
 import io.github.proify.android.extensions.dp
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.subscriber.ActivePlayerListener
@@ -79,6 +80,7 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
 
     /** 退场动画进行中：防止退出动画期间再次点击歌词创建新的弹窗（重复显示）。 */
     private var dismissing = false
+    private var pendingAnchor: WeakReference<View>? = null
 
     /**
      * 面板交互回调：转发到系统媒体控制器；AI 按钮交给 [AiExplainLauncher]。
@@ -104,6 +106,10 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
             val anchor = anchorView ?: return
             AiExplainLauncher.launch(anchor, button, LyricViewController.currentSong)
             dismiss()
+        }
+
+        override fun onMusicTags(button: View) {
+            MusicTagLauncher.launch(button) { dismiss() }
         }
     }
 
@@ -188,7 +194,11 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
     fun show(anchorView: View) {
         // 正在显示或退场动画中：视为"已显示"，再次点击 = 关闭（toggle），
         // 避免退场 200ms 内重复创建弹窗
-        if (popup?.isShowing == true || dismissing) {
+        if (dismissing) {
+            pendingAnchor = WeakReference(anchorView)
+            return
+        }
+        if (popup?.isShowing == true) {
             dismiss()
             return
         }
@@ -221,6 +231,7 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
             isFocusable = false
             isTouchModal = false
             isOutsideTouchable = true
+            setIsLaidOutInScreen(true)
             elevation = ELEVATION_DP.dp.toFloat()
             setBackgroundDrawable(null /* 透明，由卡片负责圆角与阴影 */)
             // 禁用裁剪：允许卡片 overscroll 时 translationY 超出窗口边界
@@ -245,9 +256,19 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
         }
         popup = window
 
-        // 位置：卡片紧贴状态栏下沿，横向居中（灵动岛从顶部滑出的起点）
+        // Use screen coordinates: floating controls can be anywhere on the screen.
         val x = (screenWidth - popupWidth) / 2
-        val y = (anchorView.bottom + SCREEN_VERTICAL_GAP_DP.dp).coerceAtLeast(0)
+        val anchorLocation = IntArray(2)
+        anchorView.getLocationOnScreen(anchorLocation)
+        panel.measure(
+            View.MeasureSpec.makeMeasureSpec(popupWidth, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(dm.heightPixels, View.MeasureSpec.AT_MOST)
+        )
+        val below = anchorLocation[1] + anchorView.height + SCREEN_VERTICAL_GAP_DP.dp
+        val maxY = (dm.heightPixels - panel.measuredHeight - margin).coerceAtLeast(0)
+        val y = (if (below <= maxY) below
+            else anchorLocation[1] - panel.measuredHeight - SCREEN_VERTICAL_GAP_DP.dp)
+            .coerceIn(0, maxY)
         try {
             window.showAtLocation(anchorView, Gravity.TOP or Gravity.START, x, y)
             // 遍历 PopupWindow 的所有祖先视图，逐层禁用裁剪，
@@ -308,6 +329,7 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
      */
     @JvmStatic
     fun dismissIfOwnedBy(owner: View) {
+        if (pendingAnchor?.get() === owner) pendingAnchor = null
         if (anchorView === owner) dismiss()
     }
 
@@ -366,6 +388,9 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
 
     /** 弹窗被系统/外部关闭后的资源回收。 */
     private fun cleanup() {
+        val queuedAnchor = pendingAnchor?.get()
+        pendingAnchor = null
+        LyricDataHub.removeListener(this)
         mainHandler.removeCallbacks(positionUpdater)
         SystemUIMediaUtils.unregisterListener(mediaCallback)
         NotificationCoverHelper.unregisterListener(this)
@@ -373,5 +398,8 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
         popup = null
         panel = null
         anchorView = null
+        if (queuedAnchor?.isAttachedToWindow == true) {
+            mainHandler.post { if (queuedAnchor.isAttachedToWindow) show(queuedAnchor) }
+        }
     }
 }

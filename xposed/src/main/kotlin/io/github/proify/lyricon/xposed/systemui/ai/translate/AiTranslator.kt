@@ -51,6 +51,7 @@ object AiTranslator {
 
     fun init(context: Context) {
         cache.init(context)
+        AiTranslationAppClient.initialize(context)
     }
 
     suspend fun translateSongSync(

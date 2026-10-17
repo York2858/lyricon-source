@@ -62,7 +62,9 @@ import com.mikepenz.markdown.model.DefaultMarkdownColors
 import com.mikepenz.markdown.model.DefaultMarkdownTypography
 import com.mikepenz.markdown.model.markdownPadding
 import com.mikepenz.markdown.model.rememberStreamingMarkdownState
+import io.github.libxposed.service.XposedService
 import io.github.proify.android.extensions.md5
+import io.github.proify.lyricon.app.LyriconApp
 import io.github.proify.lyricon.app.R
 import io.github.proify.lyricon.app.ai.explain.AiExplainCache
 import io.github.proify.lyricon.app.ai.explain.AiExplainCached
@@ -81,6 +83,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import top.yukonga.miuix.kmp.basic.Card
@@ -96,6 +99,8 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowBottomSheet
 import top.yukonga.miuix.kmp.window.WindowCascadingListPopup
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.resume
 
 /**
  * AI 音乐解读（透明 Activity）
@@ -293,9 +298,34 @@ private class AiExplainState(
      * 读取统一 AI 配置。
      *
      * 通过 [AiConfigProviderImpl] 从 [AiConfigStore] 获取当前激活的配置。
-     * 如果配置不可用（未配置 API Key），直接返回 null 避免白转加载圈。
+     * 冷启动时短暂等待远程配置服务绑定，仍无有效配置时返回 null。
      */
-    private fun resolveConfig(): AiConfig? {
+    private suspend fun resolveConfig(): AiConfig? {
+        readConfig()?.let { return it }
+        // A cold-started explanation can run before the remote preferences service binds.
+        // Wait for that binding instead of reporting that the saved API config is missing.
+        if (LyriconApp.xposedService == null) {
+            withTimeoutOrNull(2_000) {
+                suspendCancellableCoroutine<Unit> { continuation ->
+                    val resumed = AtomicBoolean(false)
+                    val listener = object : LyriconApp.XposedServiceStateListener {
+                        override fun onServiceStateChanged(service: XposedService?) {
+                            if (service == null || !resumed.compareAndSet(false, true)) return
+                            LyriconApp.removeXposedServiceStateListener(this)
+                            continuation.resume(Unit)
+                        }
+                    }
+                    LyriconApp.addXposedServiceStateListener(listener)
+                    continuation.invokeOnCancellation {
+                        LyriconApp.removeXposedServiceStateListener(listener)
+                    }
+                }
+            }
+        }
+        return readConfig()
+    }
+
+    private fun readConfig(): AiConfig? {
         val prefs = LyricPrefs.basicStylePrefs
         val provider = AiConfigProviderImpl(prefs)
         val config = provider.getActiveConfig()

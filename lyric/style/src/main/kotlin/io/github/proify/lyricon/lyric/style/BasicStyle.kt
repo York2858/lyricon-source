@@ -29,6 +29,7 @@ import kotlinx.serialization.Transient
 @Serializable
 @Parcelize
 data class BasicStyle(
+    var lyricsEnabled: Boolean = true,
     var anchor: String = Defaults.ANCHOR,
     var insertionOrder: Int = Defaults.INSERTION_ORDER,
 
@@ -75,8 +76,7 @@ data class BasicStyle(
     /** 悬浮窗歌词对齐方式（见 [FLOATING_ALIGN_CENTER] / [FLOATING_ALIGN_LEFT]） */
     var floatingLyricAlign: Int = Defaults.FLOATING_LYRIC_ALIGN,
 
-    /** 双击悬浮窗歌词切换时钟/歌词 */
-    var floatingDoubleTapSwitchClock: Boolean = Defaults.FLOATING_DOUBLE_TAP_SWITCH_CLOCK
+    var floatingControlEnabled: Boolean = Defaults.FLOATING_CONTROL_ENABLED
 
     ) : AbstractStyle(), Parcelable {
 
@@ -123,6 +123,7 @@ data class BasicStyle(
         }
 
     override fun onLoad(preferences: SharedPreferences) {
+        lyricsEnabled = preferences.getBoolean(KEY_LYRICS_ENABLED, true)
         anchor =
             preferences.getString("lyric_style_base_anchor", Defaults.ANCHOR) ?: Defaults.ANCHOR
         insertionOrder =
@@ -153,9 +154,8 @@ data class BasicStyle(
             "lyric_style_base_floating_lyric_align",
             Defaults.FLOATING_LYRIC_ALIGN
         )
-        floatingDoubleTapSwitchClock = preferences.getBoolean(
-            "lyric_style_base_floating_double_tap_switch_clock",
-            Defaults.FLOATING_DOUBLE_TAP_SWITCH_CLOCK
+        floatingControlEnabled = preferences.getBoolean(
+            KEY_FLOATING_CONTROL_ENABLED, Defaults.FLOATING_CONTROL_ENABLED
         )
         widthInColorOSCapsuleMode = preferences.getFloat(
             "lyric_style_base_width_in_coloros_capsule_mode",
@@ -237,6 +237,7 @@ data class BasicStyle(
     }
 
     override fun onWrite(editor: SharedPreferences.Editor) {
+        editor.putBoolean(KEY_LYRICS_ENABLED, lyricsEnabled)
         editor.putString("lyric_style_base_anchor", anchor)
         editor.putInt("lyric_style_base_insertion_order", insertionOrder)
         editor.putInt(
@@ -251,10 +252,7 @@ data class BasicStyle(
         editor.putBoolean("lyric_style_base_secondary_line_shows_roma", secondaryLineShowsRoma)
         editor.putBoolean("lyric_style_base_manual_floating_lyric_enabled", manualFloatingLyricEnabled)
         editor.putInt("lyric_style_base_floating_lyric_align", floatingLyricAlign)
-        editor.putBoolean(
-            "lyric_style_base_floating_double_tap_switch_clock",
-            floatingDoubleTapSwitchClock
-        )
+        editor.putBoolean(KEY_FLOATING_CONTROL_ENABLED, floatingControlEnabled)
 
         editor.putFloat("lyric_style_base_width_in_coloros_capsule_mode", widthInColorOSCapsuleMode)
         editor.putFloat(
@@ -290,7 +288,7 @@ data class BasicStyle(
         const val SECONDARY_LINE_SHOWS_ROMA: Boolean = false
         const val MANUAL_FLOATING_LYRIC_ENABLED: Boolean = false
         const val FLOATING_LYRIC_ALIGN: Int = FLOATING_ALIGN_CENTER
-        const val FLOATING_DOUBLE_TAP_SWITCH_CLOCK: Boolean = false
+        const val FLOATING_CONTROL_ENABLED: Boolean = true
 
         const val WIDTH_IN_COLOROS_CAPSULE_MODE: Float = 70f
         const val WIDTH_IN_COLOROS_CAPSULE_MODE_LAND: Float = 70f
@@ -308,6 +306,9 @@ data class BasicStyle(
     }
 
     companion object {
+        const val KEY_FLOATING_MODE = "lyric_style_base_manual_floating_lyric_enabled"
+        const val KEY_LYRICS_ENABLED = "lyric_style_base_lyrics_enabled"
+        const val KEY_FLOATING_CONTROL_ENABLED = "lyric_style_base_floating_control_enabled"
         const val INSERTION_ORDER_BEFORE: Int = 0
         const val INSERTION_ORDER_AFTER: Int = 1
 

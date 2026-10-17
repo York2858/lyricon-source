@@ -67,8 +67,16 @@ class AiChatCancellationTest {
 
     @Test fun cancellationBeforeHeadersClosesConnection() { cancellationClosesSocket(false) }
     @Test fun cancellationDuringBodyParsingClosesConnection() { cancellationClosesSocket(true) }
-    private fun successfulResponse(streaming: Boolean): String? = runBlocking {
+    private fun successfulResponse(
+        streaming: Boolean,
+        truncatedAfterDone: Boolean = false,
+        collectDuringStream: Boolean = false,
+    ): String? = runBlocking {
         ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { server ->
+            val reasoningEvent = if (collectDuringStream) {
+                "data: {\"id\":\"test\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"test-model\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"thinking\"}}]}\n\n"
+            } else ""
+            val continueResponse = CompletableFuture<Unit>()
             val reply = if (streaming) {
                 "data: {\"id\":\"test\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"test-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\"}}]}\n\ndata: [DONE]\n\n"
             } else {
@@ -85,11 +93,19 @@ class AiChatCancellationTest {
                         .find(header)?.groupValues?.get(1)?.toInt() ?: 0
                     repeat(length) { input.read() }
                     requestHeaders.complete(header.toString())
-                    val bytes = reply.toByteArray(Charsets.UTF_8)
+                    val bytes = (reasoningEvent + reply).toByteArray(Charsets.UTF_8)
+                    val declaredLength = if (truncatedAfterDone) bytes.size + 100 else bytes.size
                     val type = if (streaming) "text/event-stream" else "application/json"
                     socket.getOutputStream().apply {
-                        write("HTTP/1.1 200 OK\r\nContent-Type: $type\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray())
-                        write(bytes)
+                        write("HTTP/1.1 200 OK\r\nContent-Type: $type\r\nContent-Length: $declaredLength\r\nConnection: close\r\n\r\n".toByteArray())
+                        if (collectDuringStream) {
+                            write(reasoningEvent.toByteArray(Charsets.UTF_8))
+                            flush()
+                            continueResponse.get(3, TimeUnit.SECONDS)
+                            write(reply.toByteArray(Charsets.UTF_8))
+                        } else {
+                            write(bytes)
+                        }
                         flush()
                     }
                 }
@@ -97,7 +113,16 @@ class AiChatCancellationTest {
             val configs = AiConfig(apiKey = "local-test-only", model = "test-model",
                 baseUrl = "http://127.0.0.1:${server.localPort}/v1")
             val result = withTimeout(5000) {
-                if (streaming) AiChatClient.stream(configs, "test", "test")?.content
+                if (streaming) AiChatClient.stream(configs, "test", "test", onReasoning = {
+                    if (collectDuringStream) {
+                        repeat(8) {
+                            System.gc()
+                            System.runFinalization()
+                            Thread.sleep(25)
+                        }
+                        continueResponse.complete(Unit)
+                    }
+                })?.content
                 else AiChatClient.complete(configs, "test", "test")
             }
             val headers = requestHeaders.get(1, TimeUnit.SECONDS)
@@ -112,6 +137,14 @@ class AiChatCancellationTest {
     }
     @Test fun streamingReplyStillWorks() {
         assertEquals("hello", successfulResponse(true))
+    }
+
+    @Test fun completedStreamSurvivesConnectionFailureAfterDone() {
+        assertEquals("hello", successfulResponse(true, truncatedAfterDone = true))
+    }
+
+    @Test fun garbageCollectionDuringReasoningDoesNotCancelStream() {
+        assertEquals("hello", successfulResponse(true, collectDuringStream = true))
     }
 
 }

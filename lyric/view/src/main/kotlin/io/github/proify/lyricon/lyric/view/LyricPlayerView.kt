@@ -18,12 +18,14 @@ import androidx.core.view.forEach
 import androidx.core.view.isNotEmpty
 import io.github.proify.lyricon.lyric.model.RichLyricLine
 import io.github.proify.lyricon.lyric.model.Song
+import io.github.proify.lyricon.lyric.model.isSameTrackAs
 import io.github.proify.lyricon.lyric.model.extensions.TimingNavigator
 import io.github.proify.lyricon.lyric.model.interfaces.IRichLyricLine
 import io.github.proify.lyricon.lyric.view.line.LyricLineView
 import io.github.proify.lyricon.lyric.view.yoyo.AnimSpeed
 import io.github.proify.lyricon.lyric.view.yoyo.YoYoPresets
 import io.github.proify.lyricon.lyric.view.yoyo.animateUpdate
+import io.github.proify.lyricon.lyric.view.yoyo.YoYoAnimation
 import java.util.concurrent.CopyOnWriteArraySet
 
 open class LyricPlayerView(
@@ -38,6 +40,7 @@ open class LyricPlayerView(
     }
 
     private var isTextMode = false
+    private var refreshingSong = false
     private var style = LyricViewStyle()
 
     private var lineList: List<TimedLine>? = null
@@ -125,9 +128,14 @@ open class LyricPlayerView(
         set(value) {
             isTextMode = false
             if (value != null) {
+                val sameTrack = field.isSameTrackAs(value)
                 val firstActive = activeLines.firstOrNull()
                 val exiting = firstActive.isTitleLine() && resolveTitle(value) == firstActive?.text
-                if (!exiting) reset()
+                if (sameTrack) {
+                    YoYoAnimation.cancelAnimation(this)
+                    forEach { (it as? RichLyricLineView)?.endAnimationTransition() }
+                } else if (!exiting) reset()
+                refreshingSong = sameTrack
 
                 val processor = SongPreprocessor(style.placeholder)
                 val lines = processor.prepare(value)
@@ -217,6 +225,8 @@ open class LyricPlayerView(
     fun setPosition(position: Long) = updatePosition(position)
 
     fun reset() {
+        YoYoAnimation.cancelAnimation(this)
+        refreshingSong = false
         removeAllViews()
         activeLines.clear()
         currentInterlude = null
@@ -252,6 +262,7 @@ open class LyricPlayerView(
         val matches = tempMatches
 
         syncViews(matches)
+        refreshingSong = false
 
         forEach { view ->
             if (view is RichLyricLineView) {
@@ -278,7 +289,7 @@ open class LyricPlayerView(
             if (recycle != null) {
                 val speed = AnimSpeed.fromPref(style.animation.speed)
                 val preset by lazy { YoYoPresets.getById(style.animation.presetId, speed) }
-                if (style.animation.enabled && preset != null) {
+                if (!refreshingSong && style.animation.enabled && preset != null) {
                     activeLines[0] = newLine
                     recycle.beginAnimationTransition()
                     recycle.line = newLine

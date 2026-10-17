@@ -1,0 +1,8 @@
+<resources>
+    <string name="control_music_tags">Open current song with another app</string>
+    <string name="control_music_tags_chooser">Open current song with</string>
+    <string name="control_music_tags_no_audio">No accessible local audio file found for the current song</string>
+    <string name="control_music_tags_ambiguous">Multiple matching files found; the current audio file is uncertain</string>
+    <string name="control_music_tags_open_failed">Cannot open this audio. Check file access and available apps.</string>
+    <string name="control_music_tags_default_unavailable">The default app cannot open this audio. Choose another app.</string>
+</resources>

@@ -7,6 +7,8 @@
 package io.github.proify.lyricon.xposed.systemui.lyric
 
 import android.os.Handler
+import android.media.MediaMetadata
+import android.util.Log
 import io.github.proify.lyricon.common.util.CoverImages
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +17,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import io.github.proify.lyricon.lyric.model.Song
+import io.github.proify.lyricon.lyric.model.isSameTrackAs
 import io.github.proify.lyricon.lyric.style.LyricStyle
 import io.github.proify.lyricon.lyric.style.TextStyle
 import io.github.proify.lyricon.statusbarlyric.StatusBarLyric
@@ -25,6 +28,7 @@ import io.github.proify.lyricon.xposed.logger.YLog
 import io.github.proify.lyricon.xposed.systemui.hook.OplusCapsuleHooker
 import io.github.proify.lyricon.xposed.systemui.lyric.StatusBarViewManager.MAIN_LOOPER
 import io.github.proify.lyricon.xposed.systemui.util.NotificationCoverHelper
+import io.github.proify.lyricon.xposed.systemui.util.SystemUIMediaUtils
 import java.io.File
 
 /**
@@ -76,6 +80,7 @@ object LyricViewController : ActivePlayerListener,
      * 使用单例 Runnable 减少 GC 压力，仅在进度变更时由主线程调度。
      */
     private val frameUpdater = Runnable {
+        if (LyricDataHub.isWaitingForTrack) return@Runnable
         val controllers = StatusBarViewManager.controllers
         for (i in controllers.indices) {
             controllers[i].lyricView.setPosition(currentLogicPosition)
@@ -107,17 +112,31 @@ object LyricViewController : ActivePlayerListener,
      * @param song 新歌曲对象，若停止播放则为 null
      */
     override fun onSongChanged(song: Song?) {
-        YLog.info(TAG, "onSongChanged: $song")
+        YLog.info(TAG, "onSongChanged: ${song?.name}, translatedLines=${song?.lyrics?.count { !it.translation.isNullOrBlank() } ?: 0}")
+        val sameTrack = currentSong.isSameTrackAs(song)
+        if (!sameTrack) {
+            mainHandler.removeCallbacks(frameUpdater)
+            currentLogicPosition = runCatching {
+                val controller = SystemUIMediaUtils.getController(activePackage)
+                val title = controller?.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
+                if (song?.name != null && title.equals(song.name, ignoreCase = true)) {
+                    controller?.playbackState?.position?.coerceAtLeast(0) ?: 0L
+                } else 0L
+            }.getOrDefault(0L)
+        }
+        Log.i("LyriconTrack", "Apply ${song?.name}, sameTrack=$sameTrack, position=$currentLogicPosition")
         this.currentSong = song
 
         updateAllControllers {
             lyricView.setSong(song)
             refreshTranslationVisibility(lyricView)
+            lyricView.seekTo(currentLogicPosition)
         }
 
         updateFloatingLyric {
             it.setSong(song)
             refreshTranslationVisibility(it, floating = true)
+            it.seekTo(currentLogicPosition)
         }
 
         updateCoverFileFromSong(song)
@@ -239,6 +258,11 @@ object LyricViewController : ActivePlayerListener,
             FloatingLyricController.updateLyricStyle(LyricPrefs.floatingLyricStyle)
         }
         LyricDataHub.reprocessCurrentSong()
+    }
+
+    fun restoreCurrentPosition() {
+        updateAllControllers { lyricView.seekTo(currentLogicPosition) }
+        updateFloatingLyric { it.seekTo(currentLogicPosition) }
     }
 
     /**

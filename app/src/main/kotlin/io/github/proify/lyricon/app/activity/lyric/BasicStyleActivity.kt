@@ -371,6 +371,21 @@ class BasicLyricStyleActivity : AbstractLyricActivity() {
                         .fillMaxWidth(),
                 ) {
 
+                    if (!isFloatingStyleMode) {
+                        var lyricsEnabled by rememberBooleanPreference(
+                            preferences, BasicStyle.KEY_LYRICS_ENABLED, true
+                        )
+                        SwitchPreference(
+                            checked = lyricsEnabled,
+                            onCheckedChange = {
+                                lyricsEnabled = it
+                                LyricPrefs.notifyLyricModeChanged()
+                            },
+                            startAction = { IconActions(painterResource(R.drawable.ic_music_note)) },
+                            title = stringResource(R.string.item_lyrics_enabled),
+                            summary = stringResource(R.string.item_lyrics_enabled_summary),
+                        )
+                    }
                     if (isFloatingStyleMode) {
                         var isManualFloatingEnabled by rememberBooleanPreference(
                             preferences,
@@ -381,7 +396,7 @@ class BasicLyricStyleActivity : AbstractLyricActivity() {
                             checked = isManualFloatingEnabled,
                             onCheckedChange = {
                                 isManualFloatingEnabled = it
-                                LyricPrefs.notifyFloatingStyleChanged()
+                                LyricPrefs.notifyLyricModeChanged()
                             },
                             startAction = {
                                 IconActions(painterResource(R.drawable.ic_view_stream))
@@ -389,22 +404,19 @@ class BasicLyricStyleActivity : AbstractLyricActivity() {
                             title = stringResource(R.string.item_base_manual_floating_lyric),
                         )
 
-                        var isDoubleTapSwitchClock by rememberBooleanPreference(
+                        var floatingControlEnabled by rememberBooleanPreference(
                             preferences,
-                            "lyric_style_base_floating_double_tap_switch_clock",
-                            BasicStyle.Defaults.FLOATING_DOUBLE_TAP_SWITCH_CLOCK
+                            BasicStyle.KEY_FLOATING_CONTROL_ENABLED,
+                            BasicStyle.Defaults.FLOATING_CONTROL_ENABLED
                         )
                         SwitchPreference(
-                            checked = isDoubleTapSwitchClock,
-                            onCheckedChange = {
-                                isDoubleTapSwitchClock = it
-                                LyricPrefs.notifyFloatingStyleChanged()
-                            },
+                            checked = floatingControlEnabled,
+                            onCheckedChange = { floatingControlEnabled = it },
                             startAction = {
-                                IconActions(painterResource(R.drawable.ic_settings_backup_restore))
+                                IconActions(painterResource(R.drawable.ic_view_stream))
                             },
-                            title = stringResource(R.string.item_base_double_tap_switch_clock),
-                            summary = stringResource(R.string.item_base_double_tap_switch_clock_summary),
+                            title = stringResource(R.string.item_floating_control),
+                            summary = stringResource(R.string.item_floating_control_summary),
                         )
                     }
 
@@ -457,7 +469,7 @@ class BasicLyricStyleActivity : AbstractLyricActivity() {
                                 IconActions(painterResource(R.drawable.ic_music_note))
                             },
                             title = stringResource(R.string.item_gesture_enable),
-                            summary = stringResource(R.string.item_gesture_summary),
+                            summary = stringResource(R.string.item_gesture_shared_summary),
                         )
 
                         var gestureHapticEnabled by rememberBooleanPreference(
@@ -528,7 +540,9 @@ class BasicLyricStyleActivity : AbstractLyricActivity() {
             LyricGesturePrefs.ACTION_TOGGLE_PLAY,
             LyricGesturePrefs.ACTION_PREVIOUS,
             LyricGesturePrefs.ACTION_NEXT,
-            LyricGesturePrefs.ACTION_OPEN_CONTROL
+            LyricGesturePrefs.ACTION_OPEN_CONTROL,
+            LyricGesturePrefs.ACTION_SWITCH_LYRIC_MODE,
+            LyricGesturePrefs.ACTION_TOGGLE_LYRICS
         )
 
         val optionItems = listOf(
@@ -537,6 +551,8 @@ class BasicLyricStyleActivity : AbstractLyricActivity() {
             DropdownItem(title = stringResource(R.string.option_gesture_previous)),
             DropdownItem(title = stringResource(R.string.option_gesture_next)),
             DropdownItem(title = stringResource(R.string.option_gesture_open_control)),
+            DropdownItem(title = stringResource(R.string.option_gesture_switch_lyric_mode)),
+            DropdownItem(title = stringResource(R.string.option_gesture_toggle_lyrics)),
         )
 
         val current = preferences.getInt(key, default)

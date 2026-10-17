@@ -147,10 +147,20 @@
             android:theme="@android:style/Theme.NoDisplay">
             <intent-filter>
                 <action android:name="io.github.proify.lyricon.action.TOGGLE_FLOATING_LYRIC" />
+                <action android:name="io.github.proify.lyricon.action.TOGGLE_LYRICS" />
 
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+        <receiver
+            android:name=".receiver.LyricGestureReceiver"
+            android:exported="true"
+            android:permission="android.permission.STATUS_BAR_SERVICE" />
+        <service
+            android:name=".service.AiTranslationService"
+            android:exported="true"
+            android:permission="android.permission.STATUS_BAR_SERVICE" />
+
         <service
             android:name=".service.FloatingLyricTileService"
             android:exported="true"

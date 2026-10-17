@@ -14,6 +14,11 @@ object AppBridge {
     @Keep
     fun isActive(): Boolean = false
 
+    object MusicTagPrefs {
+        // Stored in LyricStylePrefs.PREF_NAME_BASE, shared with SystemUI.
+        const val KEY_DEFAULT_COMPONENT = "music_tags_default_component"
+    }
+
     object LyricStylePrefs {
         const val LYRIC_STYLE_PREF_NAME_PREIFY: String = "lyricon_style_"
 
@@ -82,6 +87,9 @@ object AppBridge {
 
         /** 打开控制面板 */
         const val ACTION_OPEN_CONTROL: Int = 4
+
+        const val ACTION_SWITCH_LYRIC_MODE: Int = 5
+        const val ACTION_TOGGLE_LYRICS: Int = 6
 
         /* ---------- 默认值 ---------- */
 

@@ -8,7 +8,6 @@ package io.github.proify.lyricon.xposed.systemui.ai.translate
 
 import android.util.Log
 import io.github.proify.android.extensions.json
-import io.github.proify.lyricon.lyric.ai.core.AiChatClient
 import io.github.proify.lyricon.lyric.ai.core.AiConfig
 import io.github.proify.lyricon.lyric.model.Song
 
@@ -46,12 +45,8 @@ internal object AiTranslationRequester {
         Log.d(TAG, "Requesting translations, payload: $payload")
 
         val requestIndices = requestItems.map { it.index }.toSet()
-        val content = AiChatClient.complete(
-            configs = configs,
-            systemPrompt = AiTranslationPrompt.build(options, song),
-            userPrompt = payload,
-            jsonObject = true
-        ) ?: run {
+        val systemPrompt = AiTranslationPrompt.build(options, song)
+        val content = AiTranslationAppClient.complete(configs, systemPrompt, payload) ?: run {
             Log.e(TAG, "OpenAI Chat request returned null.")
             return null
         }

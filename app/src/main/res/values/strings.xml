@@ -162,6 +162,8 @@
     <string name="item_base_xiaomi_island_temp_hide_summary">仅在歌词显示时隐藏，歌词消失后自动恢复。</string>
     <string name="item_base_width_color_os_capsule">宽度（流体云模式下）</string>
     <string name="item_floating_align">悬浮窗对齐方式</string>
+    <string name="item_floating_control">悬浮歌词独立操作点</string>
+    <string name="item_floating_control_summary">歌词保持触摸穿透。悬浮歌词图标接收点击、长按和左右滑动，动作使用基础配置中的手势设置。</string>
     <string name="item_floating_align_center">居中对齐</string>
     <string name="item_floating_align_left">居左对齐</string>
     <string name="item_floating_base_lyric_style">悬浮窗基础配置</string>
@@ -170,8 +172,6 @@
     <string name="item_base_paddings">内边距</string>
     <string name="item_base_manual_floating_lyric">手动切换为悬浮窗歌词</string>
     <string name="item_base_manual_floating_lyric_summary">开启后只显示悬浮窗歌词，关闭后恢复状态栏歌词。</string>
-    <string name="item_base_double_tap_switch_clock">双击切换歌词显示模式</string>
-    <string name="item_base_double_tap_switch_clock_summary">开启后双击状态栏可在状态栏歌词与悬浮窗歌词之间切换。</string>
     <string name="item_base_secondary_line_shows_roma">副行显示罗马音</string>
     <string name="item_base_secondary_line_shows_roma_summary">关闭时副行显示翻译；开启后状态栏歌词副行优先显示罗马音，并保持两行显示。</string>
     <string name="tile_manual_floating_lyric">悬浮窗歌词</string>
@@ -315,6 +315,12 @@
     <string name="option_gesture_previous">上一曲</string>
     <string name="option_gesture_next">下一曲</string>
     <string name="option_gesture_open_control">打开控制面板</string>
+    <string name="option_gesture_switch_lyric_mode">切换歌词（状态栏 / 悬浮窗）</string>
+    <string name="option_gesture_toggle_lyrics">开关歌词</string>
+    <string name="item_lyrics_enabled">显示歌词</string>
+    <string name="item_lyrics_enabled_summary">同时控制状态栏和悬浮窗歌词。使用手势关闭后，可在这里重新开启。</string>
+    <string name="message_lyrics_disabled">歌词已关闭，可在基础配置中重新开启</string>
+    <string name="item_gesture_shared_summary">状态栏歌词与悬浮操作点共用以下动作设置。</string>
     <string name="item_gesture_haptic">震动反馈</string>
     <string name="item_gesture_haptic_summary">手势识别成功时震动，可关闭。</string>
     <string name="item_base_width_in_landscape">宽度（横屏模式下）</string>
@@ -332,4 +338,8 @@
     <string name="dialog_title_ai_explain_custom_prompt">自定义系统提示词</string>
     <string name="dialog_summary_ai_explain_custom_prompt">留空使用默认提示词。自定义提示词将完全替代默认提示词。</string>
     <string name="item_ai_explain_reset_prompt">重置为默认</string>
+    <string name="item_music_tags_default_app">默认打开应用</string>
+    <string name="item_music_tags_default_app_summary">控制面板左侧按钮使用此应用打开当前歌曲的本地音频</string>
+    <string name="option_music_tags_ask">每次询问</string>
+    <string name="option_music_tags_unavailable">已选应用不可用，请重新选择</string>
 </resources>
