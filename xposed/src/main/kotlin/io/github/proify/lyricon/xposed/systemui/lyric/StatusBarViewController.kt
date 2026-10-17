@@ -18,7 +18,6 @@ import androidx.core.view.doOnAttach
 import androidx.core.view.isVisible
 import io.github.proify.android.extensions.dp
 import io.github.proify.android.extensions.isLandScape
-import io.github.proify.android.extensions.setColorAlpha
 import io.github.proify.android.extensions.toBitmap
 import io.github.proify.lyricon.app.bridge.AppBridge.LyricGesturePrefs
 import io.github.proify.lyricon.colorextractor.palette.ColorExtractor
@@ -29,6 +28,7 @@ import io.github.proify.lyricon.lyric.style.BasicStyle
 import io.github.proify.lyricon.lyric.style.LyricStyle
 import io.github.proify.lyricon.lyric.style.TextStyle
 import io.github.proify.lyricon.statusbarlyric.StatusBarLyric
+import io.github.proify.lyricon.statusbarlyric.StatusColor
 import io.github.proify.lyricon.xposed.logger.YLog
 import io.github.proify.lyricon.xposed.systemui.hook.ClockViewFinder
 import io.github.proify.lyricon.xposed.systemui.hook.OplusCapsuleHooker
@@ -135,6 +135,15 @@ class StatusBarViewController(
     internal fun updateStatusColor(systemStatusBarColor: SystemStatusBarColor) {
         this.systemStatusBarColor = systemStatusBarColor
 
+        // 悬浮窗未播放歌词需要跟随系统亮暗切换黑/白（实色，不做半透明），此处把系统配色同步给悬浮窗控制器
+        FloatingLyricController.setStatusColor(
+            StatusColor(
+                color = intArrayOf(systemStatusBarColor.color),
+                translucentColor = intArrayOf(systemStatusBarColor.color),
+                darkIntensity = systemStatusBarColor.darkIntensity
+            )
+        )
+
         val textStyle = currentLyricStyle.packageStyle.text
         lyricView.apply {
             currentStatusColor.apply {
@@ -151,9 +160,6 @@ class StatusBarViewController(
                         val gradient = themeColors.swatches
 
                         this.color = gradient
-                        this.translucentColor = gradient.map {
-                            it.setColorAlpha(0.75f)
-                        }.toIntArray()
                     }
 
                     coverColorPaletteResult != null
@@ -161,18 +167,16 @@ class StatusBarViewController(
                         val themeColors = coverColorPaletteResult
                             .let { if (isLightMode) it.lightModeColors else it.darkModeColors }
 
-                        val primary = themeColors.primary
-
-                        this.color = intArrayOf(primary)
-                        this.translucentColor = intArrayOf(primary.setColorAlpha(0.75f))
+                        this.color = intArrayOf(themeColors.primary)
                     }
 
                     else -> {
                         this.color = intArrayOf(systemStatusBarColor.color)
-                        this.translucentColor =
-                            intArrayOf(systemStatusBarColor.color.setColorAlpha(0.5f))
                     }
                 }
+
+                // 未播放部分与悬浮窗保持一致：使用系统配色实色（亮色黑 / 暗色白），不做半透明
+                this.translucentColor = intArrayOf(systemStatusBarColor.color)
 
                 // 供「副行应用封面取色」使用：仅在存在封面配色时下发
                 textView.setCoverColorScheme(resolveCoverColorScheme(isLightMode, textStyle))
@@ -214,6 +218,8 @@ class StatusBarViewController(
             updateLocation(basicStyle)
         }
         lyricView.updateStyle(lyricStyle)
+        // 翻译行显示受样式控制，样式热更新后立即应用
+        LyricViewController.applyTranslationVisibility(lyricView, lyricStyle.packageStyle.text)
         refreshGestureConfig()
 
         systemStatusBarColor?.let { updateStatusColor(it) }

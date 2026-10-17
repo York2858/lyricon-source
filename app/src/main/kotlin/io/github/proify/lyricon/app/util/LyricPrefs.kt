@@ -7,6 +7,8 @@
 package io.github.proify.lyricon.app.util
 
 import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
 import io.github.proify.android.extensions.fromJson
 import io.github.proify.android.extensions.getPrivateSharedPreferences
 import io.github.proify.android.extensions.json
@@ -24,6 +26,9 @@ import io.github.proify.lyricon.lyric.style.VisibilityRule
 object LyricPrefs {
 
     const val DEFAULT_PACKAGE_NAME: String = LyricStylePrefs.DEFAULT_PACKAGE_NAME
+
+    /** 悬浮窗样式跨进程通知的去抖间隔 */
+    private const val NOTIFY_DEBOUNCE_MS = 120L
 
     private val packageStyleManager: SharedPreferences =
         getSharedPreferences(LyricStylePrefs.PREF_NAME_PACKAGE_MANAGER)
@@ -65,6 +70,29 @@ object LyricPrefs {
             .key(AppBridgeConstants.REQUEST_UPDATE_LYRIC_STYLE)
             .send()
     }
+
+    private val notifyHandler = Handler(Looper.getMainLooper())
+
+    private val pendingStyleNotify = Runnable { notifyFloatingStyleChanged() }
+
+    /**
+     * 去抖通知模块刷新悬浮窗样式：页面内的连续改动（如拖动字重滑块）只发一次跨进程通知。
+     */
+    fun scheduleFloatingStyleNotify() {
+        notifyHandler.removeCallbacks(pendingStyleNotify)
+        notifyHandler.postDelayed(pendingStyleNotify, NOTIFY_DEBOUNCE_MS)
+    }
+
+    /** 取消尚未执行的去抖通知（退出页面时先取消，再立即通知一次） */
+    fun cancelScheduledFloatingStyleNotify() {
+        notifyHandler.removeCallbacks(pendingStyleNotify)
+    }
+
+    /**
+     * 悬浮窗配置页的偏好变更监听：注册后页面内改动即可实时下发，无需退出页面。
+     */
+    val floatingStyleChangeListener =
+        SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> scheduleFloatingStyleNotify() }
 
     fun getLyricStylePrefNames() = mutableListOf<String>().apply {
         add(LyricStylePrefs.PREF_NAME_BASE)

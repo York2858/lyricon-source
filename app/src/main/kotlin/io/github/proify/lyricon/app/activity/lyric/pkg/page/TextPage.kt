@@ -22,8 +22,6 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import io.github.proify.android.extensions.fromJson
-import io.github.proify.android.extensions.toJson
 import io.github.proify.lyricon.app.R
 import io.github.proify.lyricon.app.compose.IconActions
 import io.github.proify.lyricon.app.compose.custom.miuix.basic.ScrollBehavior
@@ -37,7 +35,6 @@ import io.github.proify.lyricon.app.compose.preference.StringInputPreference
 import io.github.proify.lyricon.app.compose.preference.TextColorPreference
 import io.github.proify.lyricon.app.compose.preference.rememberBooleanPreference
 import io.github.proify.lyricon.app.util.editCommit
-import io.github.proify.lyricon.lyric.style.RainbowTextColor
 import io.github.proify.lyricon.lyric.style.TextStyle
 import io.github.proify.lyricon.lyric.style.TextStyle.Companion.KEY_ENABLED_ENTER_ANIM
 import top.yukonga.miuix.kmp.basic.Card
@@ -250,19 +247,6 @@ fun TextPage(
                                 putBoolean("lyric_style_text_enable_custom_color", false)
                                 putBoolean("lyric_style_text_extract_cover_color", false)
                                 putBoolean("lyric_style_text_extract_cover_gradient", false)
-                                // 未配置过配色时写入默认彩虹配色，避免「开启后没有任何效果」
-                                if (!hasConfiguredTextColor(preferences, KEY_RAINBOW_COLOR_LIGHT)) {
-                                    putString(
-                                        KEY_RAINBOW_COLOR_LIGHT,
-                                        DEFAULT_LIGHT_RAINBOW_COLOR.toJson()
-                                    )
-                                }
-                                if (!hasConfiguredTextColor(preferences, KEY_RAINBOW_COLOR_DARK)) {
-                                    putString(
-                                        KEY_RAINBOW_COLOR_DARK,
-                                        DEFAULT_DARK_RAINBOW_COLOR.toJson()
-                                    )
-                                }
                             }
                         } else {
                             preferences.editCommit {
@@ -314,7 +298,7 @@ fun TextPage(
                     "lyric_style_text_rainbow_color_light_mode",
                     title = stringResource(R.string.item_text_color_light_mode),
                     leftAction = { IconActions(painterResource(R.drawable.ic_brightness7)) },
-                    // 彩虹渐变复用该配色作为调色板，故彩虹开启时也允许编辑
+                    // 彩虹默认使用内置配色；这里可分别覆盖正文、底色和高亮。
                     enabled = customColorEnabled.value || isRainbowColorEnabled,
                 )
                 TextColorPreference(
@@ -669,30 +653,4 @@ private fun TypefaceCompose(preferences: SharedPreferences) {
         checkboxLocation = CheckboxLocation.End,
         onCheckedChange = { isTypefaceItalicEnabled = it }
     )
-}
-
-/** 彩虹渐变配色偏好键（「自定义颜色」与「启用歌词彩虹渐变」共用） */
-private const val KEY_RAINBOW_COLOR_LIGHT = "lyric_style_text_rainbow_color_light_mode"
-private const val KEY_RAINBOW_COLOR_DARK = "lyric_style_text_rainbow_color_dark_mode"
-
-/** 首次开启「启用歌词彩虹渐变」时写入的默认彩虹配色 */
-private val DEFAULT_LIGHT_RAINBOW_COLOR = RainbowTextColor(
-    normal = intArrayOf(
-        0xFFE53935.toInt(), 0xFFFB8C00.toInt(), 0xFFFDD835.toInt(), 0xFF43A047.toInt(),
-        0xFF00ACC1.toInt(), 0xFF3949AB.toInt(), 0xFF8E24AA.toInt()
-    )
-)
-
-private val DEFAULT_DARK_RAINBOW_COLOR = RainbowTextColor(
-    normal = intArrayOf(
-        0xFFFF5252.toInt(), 0xFFFFB74D.toInt(), 0xFFFFF176.toInt(), 0xFF81C784.toInt(),
-        0xFF4DD0E1.toInt(), 0xFF7986CB.toInt(), 0xFFBA68C8.toInt()
-    )
-)
-
-/** 指定配色是否已由用户配置过（normal 非空即视为已配置） */
-private fun hasConfiguredTextColor(preferences: SharedPreferences, key: String): Boolean {
-    val jsonString = preferences.getString(key, null) ?: return false
-    return runCatching { jsonString.fromJson<RainbowTextColor>().normal.isNotEmpty() }
-        .getOrDefault(false)
 }

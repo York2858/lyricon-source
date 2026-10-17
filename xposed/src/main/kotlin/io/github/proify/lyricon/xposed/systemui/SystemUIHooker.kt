@@ -251,6 +251,8 @@ object SystemUIHooker : PackageHooker() {
                     StatusBarViewManager.forEach { it.refreshGestureConfig() }
                     applyLyricMode()
                 }
+                // 展示层加工（隐藏翻译/仅显示翻译、繁简、屏蔽词等）随样式变更重跑
+                LyricDataHub.reprocessCurrentSong()
             }
         }
     }

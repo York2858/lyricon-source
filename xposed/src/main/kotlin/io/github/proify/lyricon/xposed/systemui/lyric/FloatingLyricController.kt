@@ -13,7 +13,6 @@ import android.view.Gravity
 import android.view.ViewGroup
 import android.view.WindowManager
 import io.github.proify.android.extensions.dp
-import io.github.proify.android.extensions.setColorAlpha
 import io.github.proify.android.extensions.toBitmap
 import io.github.proify.lyricon.app.bridge.AppBridgeConstants
 import io.github.proify.lyricon.colorextractor.palette.ColorExtractor
@@ -94,6 +93,8 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
         val view = lyricView ?: return
         view.forceAutoWidth = true
         view.updateStyle(lyricStyle)
+        // 翻译行显示受悬浮窗自身样式控制，样式热更新后立即应用
+        LyricViewController.applyTranslationVisibility(view, lyricStyle.packageStyle.text)
         applyContentAlignment(view, lyricStyle)
 
         val lp = layoutParams ?: return
@@ -252,17 +253,12 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
 
         val themeColors =
             if (statusColor.isLightMode) coverResult.lightModeColors else coverResult.darkModeColors
+        // 仅「已播放」配色跟随封面；未播放配色保持系统配色（亮色黑/暗色白），保证两种主题下都清晰
         if (shouldUseCoverTextGradient(style)) {
             val gradient = themeColors.swatches
-            if (gradient.isNotEmpty()) {
-                statusColor.color = gradient
-                statusColor.translucentColor =
-                    gradient.map { it.setColorAlpha(0.75f) }.toIntArray()
-            }
+            if (gradient.isNotEmpty()) statusColor.color = gradient
         } else {
-            val primary = themeColors.primary
-            statusColor.color = intArrayOf(primary)
-            statusColor.translucentColor = intArrayOf(primary.setColorAlpha(0.75f))
+            statusColor.color = intArrayOf(themeColors.primary)
         }
         view.setStatusBarColor(statusColor)
     }

@@ -10,6 +10,7 @@ import android.os.Handler
 import io.github.proify.android.extensions.crc32
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.lyric.style.LyricStyle
+import io.github.proify.lyricon.lyric.style.TextStyle
 import io.github.proify.lyricon.statusbarlyric.StatusBarLyric
 import io.github.proify.lyricon.statusbarlyric.logo.CoverStrategy
 import io.github.proify.lyricon.subscriber.ActivePlayerListener
@@ -110,7 +111,7 @@ object LyricViewController : ActivePlayerListener,
 
         updateFloatingLyric {
             it.setSong(song)
-            refreshTranslationVisibility(it)
+            refreshTranslationVisibility(it, floating = true)
         }
 
         updateCoverFileFromSong(song)
@@ -207,7 +208,7 @@ object LyricViewController : ActivePlayerListener,
 
         this.isDisplayTranslation = isDisplayTranslation
         updateAllControllers { refreshTranslationVisibility(lyricView) }
-        updateFloatingLyric { refreshTranslationVisibility(it) }
+        updateFloatingLyric { refreshTranslationVisibility(it, floating = true) }
     }
 
     /**
@@ -268,14 +269,27 @@ object LyricViewController : ActivePlayerListener,
 
     /**
      * 根据当前用户配置和样式决定翻译行的显示状态。
-     * @param view 状态栏歌词视图
+     * @param view 歌词视图
+     * @param floating 悬浮窗视图需使用悬浮窗自己的文字样式配置（状态栏与悬浮窗的翻译开关相互独立）
      */
-    private fun refreshTranslationVisibility(view: StatusBarLyric) {
-        val style = LyricPrefs.activePackageStyle
-        val shouldShow = isDisplayTranslation &&
-                !style.text.isDisableTranslation &&
-                !style.text.isTranslationOnly
-        view.updateDisplayTranslation(displayTranslation = shouldShow)
+    private fun refreshTranslationVisibility(view: StatusBarLyric, floating: Boolean = false) {
+        val textStyle =
+            if (floating) LyricPrefs.floatingLyricStyle.packageStyle.text
+            else LyricPrefs.activePackageStyle.text
+        applyTranslationVisibility(view, textStyle)
+    }
+
+    /**
+     * 按样式中的翻译开关与全局翻译开关应用翻译行显示状态。
+     *
+     * 供样式热更新时调用（隐藏翻译 / 仅显示翻译改动后无需等歌曲切换即可生效）。
+     */
+    fun applyTranslationVisibility(view: StatusBarLyric, textStyle: TextStyle) {
+        view.updateDisplayTranslation(
+            displayTranslation = isDisplayTranslation &&
+                    !textStyle.isDisableTranslation &&
+                    !textStyle.isTranslationOnly
+        )
     }
 
     /**

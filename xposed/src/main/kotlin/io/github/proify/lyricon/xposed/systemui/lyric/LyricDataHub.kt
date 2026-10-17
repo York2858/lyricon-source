@@ -67,7 +67,13 @@ object LyricDataHub : ActivePlayerListener {
                     return@launch
                 }
 
-                val style = LyricPrefs.getLyricStyle()
+                // 悬浮窗与状态栏歌词互斥显示：悬浮窗模式下展示加工应以悬浮窗样式为准，
+                // 否则「仅显示翻译」等展示配置在悬浮窗下不生效。
+                val style = if (LyricPrefs.floatingBaseStyle.manualFloatingLyricEnabled) {
+                    LyricPrefs.floatingLyricStyle
+                } else {
+                    LyricPrefs.getLyricStyle()
+                }
 
                 // 1. 后台前置加工：处理繁简、屏蔽词等基础显示数据
                 val preProcessed = LyricDataProcessor.executePreProcessing(song)

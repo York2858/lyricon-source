@@ -40,12 +40,16 @@ object LyricPrefs {
     @Volatile
     var activePackageName: String? = null
 
-    /** 全局偏好变更监听器，触发时刷新歌词视图配置 */
+    /**
+     * 全局偏好变更监听器，触发时刷新歌词视图配置。
+     *
+     * 注意：远程偏好的变更回调运行在 Binder 线程，必须经由 [LyricViewController.applyConfigurationUpdate]
+     * 内部的主线程分发执行视图操作，不能在此直接触碰 View。
+     */
     private val globalSharedPreferenceChangeListener: SharedPreferences.OnSharedPreferenceChangeListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
             LyricViewController.applyConfigurationUpdate(getLyricStyle())
-            // 悬浮窗歌词：刷新样式并同步显示模式
-            FloatingLyricController.updateLyricStyle(floatingLyricStyle)
+            // 悬浮窗歌词显示模式同步
             SystemUIHooker.applyLyricMode()
             Log.i(TAG, "global prefs changed")
         }

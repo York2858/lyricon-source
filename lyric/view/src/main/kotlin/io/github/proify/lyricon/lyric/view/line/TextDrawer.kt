@@ -39,7 +39,8 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
     /** 文本自然高度（descent - ascent），用于计算空间受限时的动画强度。 */
     private var textHeight = 0f
 
-    private val rainbowCache = RainbowGradientCache()
+    private val bgRainbowCache = RainbowGradientCache()
+    private val hlRainbowCache = RainbowGradientCache()
     private var cachedAlphaMaskShader: LinearGradient? = null
     private var lastHighlightWidth = -1f
     private var cachedSolidShader: LinearGradient? = null
@@ -61,7 +62,8 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
     }
 
     fun clearShaderCache() {
-        rainbowCache.clear()
+        bgRainbowCache.clear()
+        hlRainbowCache.clear()
         cachedAlphaMaskShader = null
         lastHighlightWidth = -1f
         cachedSolidShader = null
@@ -102,7 +104,7 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
             }
 
             if (isRainbowBg) {
-                bgPaint.shader = getOrCreateRainbowShader(model.width, bgColors)
+                bgPaint.shader = bgRainbowCache.getOrCreate(model.width, bgColors)
             } else {
                 bgPaint.shader = null
             }
@@ -135,7 +137,7 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
 
                     if (useGradient) {
                         val baseShader = if (isRainbowHl) {
-                            getOrCreateRainbowShader(model.width, hlColors)
+                            hlRainbowCache.getOrCreate(model.width, hlColors)
                         } else {
                             getOrCreateSolidGradientShader(model.width, hlPaint.color)
                         }
@@ -143,7 +145,7 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
                         hlPaint.shader = ComposeShader(baseShader, maskShader, PorterDuff.Mode.DST_IN)
                     } else {
                         if (isRainbowHl) {
-                            hlPaint.shader = getOrCreateRainbowShader(model.width, hlColors)
+                            hlPaint.shader = hlRainbowCache.getOrCreate(model.width, hlColors)
                         } else {
                             hlPaint.shader = null
                         }
@@ -388,9 +390,6 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
             }
         }
     }
-
-    private fun getOrCreateRainbowShader(totalWidth: Float, colors: IntArray): Shader =
-        rainbowCache.getOrCreate(totalWidth, colors)
 
     private fun getOrCreateAlphaMaskShader(totalWidth: Float, highlightWidth: Float): Shader {
         val edgePosition = max(highlightWidth / totalWidth, 0.9f)

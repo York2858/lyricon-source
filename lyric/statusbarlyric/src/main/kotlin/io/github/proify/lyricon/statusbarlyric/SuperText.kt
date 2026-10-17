@@ -28,6 +28,7 @@ import io.github.proify.lyricon.lyric.view.TextLook
 import io.github.proify.lyricon.lyric.view.TitleSlot
 import io.github.proify.lyricon.lyric.view.WordMotion
 import java.io.File
+import kotlin.math.max
 import kotlin.math.min
 
 class SuperText(context: Context) : LyricPlayerView(context) {
@@ -38,6 +39,8 @@ class SuperText(context: Context) : LyricPlayerView(context) {
         private const val TAG = "SuperText"
         private const val DEBUG = false
         private const val MAX_FONT_WEIGHT: Int = 1000
+        private const val NORMAL_FONT_WEIGHT: Int = 400
+        private const val BOLD_FONT_WEIGHT: Int = 700
     }
 
     var linkedTextView: TextView? = null
@@ -203,10 +206,11 @@ class SuperText(context: Context) : LyricPlayerView(context) {
     )
 
     private fun resolvePrimaryColor(textStyle: TextStyle): IntArray {
+        if (textStyle.enableRainbowTextColor) {
+            return resolveRainbowColors(textStyle).normal
+        }
         val customColor = textStyle.color(currentStatusColor.isLightMode)
-        val useCustomPalette =
-            textStyle.enableCustomTextColor || textStyle.enableRainbowTextColor
-        return if (useCustomPalette && customColor?.normal?.isNotEmpty() == true) {
+        return if (textStyle.enableCustomTextColor && customColor?.normal?.isNotEmpty() == true) {
             customColor.normal
         } else {
             currentStatusColor.color
@@ -226,22 +230,15 @@ class SuperText(context: Context) : LyricPlayerView(context) {
         if (textStyle.enableExtractCoverColorForSecondary) {
             coverColorScheme?.takeIf { it.isNotEmpty() }?.let { return it }
         }
-        if (textStyle.enableRainbowColorForSecondary) {
-            textStyle.color(currentStatusColor.isLightMode)?.normal
-                ?.takeIf { it.isNotEmpty() }?.let { return it }
+        if (textStyle.enableRainbowTextColor && textStyle.enableRainbowColorForSecondary) {
+            return resolveRainbowColors(textStyle).normal
         }
         if (isFloatingStyle() && primaryUsesSpecialPalette(textStyle)) {
+            // 「自定义背景色」即渲染层的未播放配色（自定义颜色-背景色，未配置时为半透明状态栏配色）
             return resolveSecondaryFallbackColor(textStyle)
         }
         return resolvePrimaryColor(textStyle)
     }
-
-    /**
-     * 副行回落的「自定义背景色」：优先取用户自定义的背景色，未配置时使用状态栏配色。
-     */
-    private fun resolveSecondaryFallbackColor(textStyle: TextStyle): IntArray =
-        textStyle.color(currentStatusColor.isLightMode)?.background
-            ?.takeIf { it.isNotEmpty() } ?: currentStatusColor.color
 
     /** 当前是否为悬浮窗歌词样式 */
     private fun isFloatingStyle(): Boolean =
@@ -249,14 +246,18 @@ class SuperText(context: Context) : LyricPlayerView(context) {
 
     /** 主行是否正在使用封面取色 / 彩虹渐变等特殊配色 */
     private fun primaryUsesSpecialPalette(textStyle: TextStyle): Boolean {
-        if (textStyle.enableExtractCoverTextColor) return true
+        if (textStyle.enableExtractCoverTextColor || textStyle.enableRainbowTextColor) return true
         val customColor = textStyle.color(currentStatusColor.isLightMode) ?: return false
-        val useCustomPalette =
-            textStyle.enableCustomTextColor || textStyle.enableRainbowTextColor
-        return useCustomPalette && customColor.normal.isNotEmpty()
+        return textStyle.enableCustomTextColor && customColor.normal.isNotEmpty()
     }
 
     private fun resolveBgColor(textStyle: TextStyle): IntArray {
+        // 未播放部分沿用既有未播放配色（亮色黑 / 暗色白；用户自定义背景色优先），不使用淡色彩虹
+        return resolveSecondaryFallbackColor(textStyle)
+    }
+
+    /** 副行关闭彩虹时沿用原有底色，避免主行的彩虹底层使副行也变成彩虹。 */
+    private fun resolveSecondaryFallbackColor(textStyle: TextStyle): IntArray {
         val customColor = textStyle.color(currentStatusColor.isLightMode)
         return if (textStyle.enableCustomTextColor && customColor?.background?.isNotEmpty() == true) {
             customColor.background
@@ -266,6 +267,9 @@ class SuperText(context: Context) : LyricPlayerView(context) {
     }
 
     private fun resolveHighlightColor(textStyle: TextStyle): IntArray {
+        if (textStyle.enableRainbowTextColor) {
+            return resolveRainbowColors(textStyle).highlight
+        }
         val customColor = textStyle.color(currentStatusColor.isLightMode)
         return if (textStyle.enableCustomTextColor && customColor?.highlight?.isNotEmpty() == true) {
             customColor.highlight
@@ -273,6 +277,11 @@ class SuperText(context: Context) : LyricPlayerView(context) {
             currentStatusColor.color
         }
     }
+
+    private fun resolveRainbowColors(textStyle: TextStyle) = RainbowPalette.resolve(
+        lightMode = currentStatusColor.isLightMode,
+        custom = textStyle.color(currentStatusColor.isLightMode)
+    )
 
     private fun resolveTypeface(textStyle: TextStyle): Typeface {
         val baseTypeface = textStyle.typeFace?.takeIf { it.isNotBlank() }?.let { path ->
@@ -282,17 +291,21 @@ class SuperText(context: Context) : LyricPlayerView(context) {
             } else null
         } ?: linkedTextView?.typeface ?: Typeface.DEFAULT
 
-        return if (textStyle.fontWeight > 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            Typeface.create(
-                baseTypeface,
-                min(MAX_FONT_WEIGHT, textStyle.fontWeight),
-                textStyle.typeFaceItalic
-            )
+        val italic = textStyle.typeFaceItalic
+        // 字重与「粗体」取较大值：设置过字重时粗体依然生效
+        val requestedWeight =
+            if (textStyle.fontWeight > 0) textStyle.fontWeight else NORMAL_FONT_WEIGHT
+        val weight =
+            if (textStyle.typeFaceBold) max(requestedWeight, BOLD_FONT_WEIGHT)
+            else requestedWeight
+
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            Typeface.create(baseTypeface, min(MAX_FONT_WEIGHT, weight), italic)
         } else {
             val styleFlag = when {
-                textStyle.typeFaceBold && textStyle.typeFaceItalic -> Typeface.BOLD_ITALIC
-                textStyle.typeFaceBold -> Typeface.BOLD
-                textStyle.typeFaceItalic -> Typeface.ITALIC
+                weight >= BOLD_FONT_WEIGHT && italic -> Typeface.BOLD_ITALIC
+                weight >= BOLD_FONT_WEIGHT -> Typeface.BOLD
+                italic -> Typeface.ITALIC
                 else -> Typeface.NORMAL
             }
             Typeface.create(baseTypeface, styleFlag)

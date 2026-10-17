@@ -65,9 +65,19 @@ class FloatingColorStyleActivity : AbstractLyricActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // 页面内改动即时下发，无需退出页面才生效
+        preferences.registerOnSharedPreferenceChangeListener(LyricPrefs.floatingStyleChangeListener)
+    }
+
     override fun onPause() {
         super.onPause()
+        preferences.unregisterOnSharedPreferenceChangeListener(
+            LyricPrefs.floatingStyleChangeListener
+        )
         // 悬浮窗颜色/动画变更后通知模块刷新（跨进程偏好监听不生效）
+        LyricPrefs.cancelScheduledFloatingStyleNotify()
         LyricPrefs.notifyFloatingStyleChanged()
     }
 

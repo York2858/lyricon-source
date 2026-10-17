@@ -69,10 +69,26 @@ class BasicLyricStyleActivity : AbstractLyricActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // 悬浮窗配置页：页面内改动即时下发，无需退出页面才生效
+        if (isFloatingStyleMode) {
+            preferences.registerOnSharedPreferenceChangeListener(
+                LyricPrefs.floatingStyleChangeListener
+            )
+        }
+    }
+
     override fun onPause() {
         super.onPause()
         // 悬浮窗配置变更后通知模块刷新（跨进程偏好监听不生效）
-        if (isFloatingStyleMode) LyricPrefs.notifyFloatingStyleChanged()
+        if (isFloatingStyleMode) {
+            preferences.unregisterOnSharedPreferenceChangeListener(
+                LyricPrefs.floatingStyleChangeListener
+            )
+            LyricPrefs.cancelScheduledFloatingStyleNotify()
+            LyricPrefs.notifyFloatingStyleChanged()
+        }
     }
 
     @Composable
