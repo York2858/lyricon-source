@@ -217,6 +217,10 @@
     <string name="item_translation_frequency_penalty">Frequency penalty</string>
     <string name="item_translation_model_api_key_not_set">API 密钥未设置</string>
     <string name="item_translation_model_empty">未找到可用模型</string>
+    <string name="item_translation_model_fetch">获取模型</string>
+    <string name="item_translation_model_fetching">获取中…</string>
+    <string name="item_translation_model_list_title">接口提供的模型</string>
+    <string name="item_translation_model_credits">倍率 %1$s</string>
     <string name="title_translation_model_load_failed">加载模型失败</string>
     <string name="item_translation_only">仅显示翻译</string>
     <string name="item_translation_clear_db">清空数据库</string>

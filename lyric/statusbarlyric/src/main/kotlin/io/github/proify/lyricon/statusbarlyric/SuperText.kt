@@ -223,8 +223,8 @@ class SuperText(context: Context) : LyricPlayerView(context) {
      * 优先级：副行封面取色 → 副行彩虹渐变 → 自定义背景色 → 与主行一致。
      *
      * 主行正在跟随封面取色/彩虹渐变时，副行开关关闭会回落到「自定义背景色」
-     * （未自定义时使用状态栏配色）；主行未使用特殊配色时副行与主行保持一致，
-     * 不影响既有显示效果。副行独立配色开关仅在悬浮窗配置页暴露，故仅悬浮窗样式生效。
+     * （未自定义时使用状态栏配色）；主行未使用特殊配色时副行与主行保持一致。
+     * 状态栏与悬浮窗样式共用同一套副行配色逻辑。
      */
     private fun resolveSecondaryColor(textStyle: TextStyle): IntArray {
         if (textStyle.enableExtractCoverColorForSecondary) {
@@ -233,16 +233,12 @@ class SuperText(context: Context) : LyricPlayerView(context) {
         if (textStyle.enableRainbowTextColor && textStyle.enableRainbowColorForSecondary) {
             return resolveRainbowColors(textStyle).normal
         }
-        if (isFloatingStyle() && primaryUsesSpecialPalette(textStyle)) {
+        if (primaryUsesSpecialPalette(textStyle)) {
             // 「自定义背景色」即渲染层的未播放配色（自定义颜色-背景色，未配置时为半透明状态栏配色）
             return resolveSecondaryFallbackColor(textStyle)
         }
         return resolvePrimaryColor(textStyle)
     }
-
-    /** 当前是否为悬浮窗歌词样式 */
-    private fun isFloatingStyle(): Boolean =
-        currentLyricStyle?.basicStyle?.manualFloatingLyricEnabled == true
 
     /** 主行是否正在使用封面取色 / 彩虹渐变等特殊配色 */
     private fun primaryUsesSpecialPalette(textStyle: TextStyle): Boolean {

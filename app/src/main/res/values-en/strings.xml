@@ -193,6 +193,10 @@
     <string name="item_translation_frequency_penalty">Frequency penalty</string>
     <string name="item_translation_model_api_key_not_set">API key is not configured</string>
     <string name="item_translation_model_empty">No available models found</string>
+    <string name="item_translation_model_fetch">Fetch models</string>
+    <string name="item_translation_model_fetching">Fetching…</string>
+    <string name="item_translation_model_list_title">Models provided by the API</string>
+    <string name="item_translation_model_credits">Credits %1$s</string>
     <string name="title_translation_model_load_failed">Failed to load models</string>
     <string name="item_translation_only">Show translation only</string>
     <string name="alert_dialog_message_translation_clear">This action will clear the database. Are you sure you want to continue?</string>

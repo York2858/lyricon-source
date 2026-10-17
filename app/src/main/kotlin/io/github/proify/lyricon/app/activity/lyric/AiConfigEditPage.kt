@@ -8,11 +8,13 @@ package io.github.proify.lyricon.app.activity.lyric
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -35,21 +38,24 @@ import io.github.proify.lyricon.app.compose.custom.miuix.preference.CheckboxPref
 import io.github.proify.lyricon.app.compose.preference.DoubleInputPreference
 import io.github.proify.lyricon.app.compose.preference.StringInputPreference
 import io.github.proify.lyricon.app.util.LyricPrefs
-import io.github.proify.lyricon.app.util.toast
 import io.github.proify.lyricon.lyric.ai.core.AiConfig
 import io.github.proify.lyricon.lyric.ai.core.AiProfile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Delete
@@ -317,7 +323,7 @@ private val SectionCardModifier = Modifier
     .padding(start = 16.dp, top = 0.dp, end = 16.dp, bottom = 0.dp)
     .fillMaxWidth()
 
-/** 模型编辑行（手动输入 + 自动拉取可用模型）。 */
+/** 模型编辑行：手动输入 +「获取模型」按键拉取接口模型列表后点选。 */
 @Composable
 private fun AiConfigEditModelPreference(
     config: AiConfig,
@@ -325,12 +331,47 @@ private fun AiConfigEditModelPreference(
 ) {
     val prefs = LyricPrefs.basicStylePrefs
     val scope = rememberCoroutineScope()
-    var models by remember { mutableStateOf<List<String>>(emptyList()) }
-    var showDialog by remember { mutableStateOf(false) }
+    var models by remember { mutableStateOf<List<AiModelOption>>(emptyList()) }
+    var showSheet by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var hasFetched by remember { mutableStateOf(false) }
     val apiKeyNotSet = stringResource(R.string.item_translation_model_api_key_not_set)
     val noModels = stringResource(R.string.item_translation_model_empty)
     val unknown = stringResource(R.string.unknown)
+
+    fun loadModels() {
+        if (isLoading) return
+        val apiKey = config.apiKey
+        val baseUrl = config.baseUrl
+        if (apiKey.isNullOrBlank() || baseUrl.isNullOrBlank()) {
+            models = emptyList()
+            error = apiKeyNotSet
+            hasFetched = true
+            return
+        }
+        isLoading = true
+        error = null
+        scope.launch {
+            val result = fetchAvailableModels(baseUrl, apiKey)
+            isLoading = false
+            hasFetched = true
+            result.onSuccess { fetched ->
+                models = (fetched + listOfNotNull(
+                    config.model?.takeIf { it.isNotBlank() }?.let { AiModelOption(it) }
+                )).distinctBy { it.id }
+                if (models.isEmpty()) error = noModels
+            }.onFailure {
+                models = emptyList()
+                error = it.message ?: unknown
+            }
+        }
+    }
+
+    fun openModelSheet(fetch: Boolean) {
+        showSheet = true
+        if (fetch || !hasFetched) loadModels()
+    }
 
     StringInputPreference(
         preferences = prefs,
@@ -345,76 +386,103 @@ private fun AiConfigEditModelPreference(
         value = config.model,
         onValueChange = { onModelChange(it) },
         endActions = {
-            IconButton(
-                onClick = {
-                    if (isLoading) return@IconButton
-                    val apiKey = config.apiKey
-                    if (apiKey.isNullOrBlank()) {
-                        toast(apiKeyNotSet)
-                        return@IconButton
-                    }
-                    val baseUrl = config.baseUrl
-                    if (baseUrl.isNullOrBlank()) {
-                        toast(apiKeyNotSet)
-                        return@IconButton
-                    }
-                    isLoading = true
-                    scope.launch {
-                        val result = fetchOpenAiModels(baseUrl, apiKey)
-                        isLoading = false
-                        result.onSuccess { fetched ->
-                            if (fetched.isEmpty()) {
-                                toast(noModels)
-                            } else {
-                                models = (fetched + listOfNotNull(config.model))
-                                    .filter { it.isNotBlank() }
-                                    .distinct()
-                                showDialog = true
-                            }
-                        }.onFailure {
-                            toast(it.message ?: unknown)
-                        }
-                    }
-                }
-            ) {
-                if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.width(24.dp))
-                } else {
-                    Icon(imageVector = MiuixIcons.Search, contentDescription = null)
-                }
+            IconButton(onClick = { openModelSheet(fetch = false) }) {
+                Icon(
+                    imageVector = MiuixIcons.Search,
+                    contentDescription = stringResource(R.string.dialog_title_available_models),
+                )
             }
         },
     )
 
-    if (showDialog) {
-        @Suppress("KotlinConstantConditions")
+    // 与 lyrico 一致的「获取模型」按键：拉取接口提供的模型后进入列表选择。
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextButton(
+            text = stringResource(
+                if (isLoading) R.string.item_translation_model_fetching
+                else R.string.item_translation_model_fetch
+            ),
+            onClick = { openModelSheet(fetch = true) },
+        )
+    }
+
+    if (showSheet) {
         WindowBottomSheet(
-            show = showDialog,
+            show = showSheet,
             title = stringResource(R.string.dialog_title_available_models),
-            onDismissRequest = { showDialog = false },
+            onDismissRequest = { showSheet = false },
             backgroundColor = MiuixTheme.colorScheme.surface,
             insideMargin = DpSize(0.dp, 0.dp),
         ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .overScrollVertical()
-            ) {
-                models.forEach { model ->
-                    item(key = model) {
-                        Card(
-                            modifier = Modifier
-                                .padding(start = 16.dp, top = 0.dp, end = 16.dp, bottom = 16.dp)
-                                .fillMaxWidth()
-                        ) {
-                            CheckboxPreference(
-                                title = model,
-                                checked = config.model == model,
-                                onCheckedChange = {
-                                    onModelChange(model)
-                                    showDialog = false
-                                },
-                            )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(
+                        text = stringResource(
+                            if (isLoading) R.string.item_translation_model_fetching
+                            else R.string.item_translation_model_fetch
+                        ),
+                        onClick = { loadModels() },
+                    )
+                    Spacer(Modifier.weight(1f))
+                    if (models.isNotEmpty()) {
+                        Text(
+                            text = stringResource(R.string.item_translation_model_list_title),
+                            fontSize = MiuixTheme.textStyles.body2.fontSize,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                }
+
+                error?.takeIf { it.isNotBlank() }?.let { message ->
+                    Text(
+                        text = message,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        fontSize = MiuixTheme.textStyles.body2.fontSize,
+                        color = MiuixTheme.colorScheme.error,
+                    )
+                }
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .overScrollVertical()
+                ) {
+                    models.forEach { model ->
+                        item(key = model.id) {
+                            val creditsText = model.credits?.let {
+                                stringResource(R.string.item_translation_model_credits, it)
+                            }
+                            val summary = listOfNotNull(
+                                model.id.takeIf { model.displayName != null },
+                                creditsText,
+                            ).joinToString(" · ").takeIf { it.isNotBlank() }
+
+                            Card(
+                                modifier = Modifier
+                                    .padding(start = 16.dp, top = 0.dp, end = 16.dp, bottom = 16.dp)
+                                    .fillMaxWidth()
+                            ) {
+                                CheckboxPreference(
+                                    title = model.displayName ?: model.id,
+                                    summary = summary,
+                                    checked = config.model == model.id,
+                                    onCheckedChange = {
+                                        onModelChange(model.id)
+                                        showSheet = false
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -423,6 +491,13 @@ private fun AiConfigEditModelPreference(
     }
 }
 
+
+/** 模型列表项：[id] 为请求时填入的模型标识，其余字段仅用于展示。 */
+internal data class AiModelOption(
+    val id: String,
+    val displayName: String? = null,
+    val credits: String? = null,
+)
 
 internal val modelsHttpClient: OkHttpClient by lazy {
     OkHttpClient.Builder()
@@ -431,54 +506,141 @@ internal val modelsHttpClient: OkHttpClient by lazy {
         .build()
 }
 
-internal suspend fun fetchOpenAiModels(
+/** 模型列表接口返回非 2xx 时抛出；404 用于触发 /v1 兜底重试。 */
+private class ModelListHttpException(val code: Int, message: String) : Exception(message)
+
+/**
+ * 拉取接口提供的模型列表。
+ *
+ * 兼容 OpenAI 兼容服务的 `{"data":[{"id":...}]}`、Gemini 的 `{"models":[{"name":...}]}`
+ * 以及直接返回数组的网关；用户漏填 `/v1` 时会在 404 后自动补全重试一次。
+ */
+internal suspend fun fetchAvailableModels(
     baseUrl: String,
     apiKey: String
-): Result<List<String>> = withContext(Dispatchers.IO) {
-    runCatching {
-        val request = Request.Builder()
-            .url(buildOpenAiModelsUrl(baseUrl))
-            .header("Authorization", "Bearer $apiKey")
-            .get()
-            .build()
+): Result<List<AiModelOption>> = withContext(Dispatchers.IO) {
+    try {
+        val urls = buildModelListUrls(baseUrl)
+        if (urls.isEmpty()) {
+            return@withContext Result.failure(IllegalArgumentException("Base URL is blank"))
+        }
+        var lastError: Exception? = null
+        for (url in urls) {
+            try {
+                return@withContext Result.success(requestModelList(url, apiKey))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ModelListHttpException) {
+                if (e.code == 404) {
+                    lastError = e
+                    continue
+                }
+                throw e
+            }
+        }
+        Result.failure(lastError ?: IllegalStateException("No model endpoint available"))
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+}
 
-        modelsHttpClient.newCall(request).execute().use { response ->
-            val body = response.body.string()
-            if (!response.isSuccessful) {
-                error("HTTP ${response.code} ${body.take(160)}".trim())
+private fun requestModelList(url: String, apiKey: String): List<AiModelOption> {
+    val request = Request.Builder()
+        .url(url)
+        .header("Authorization", "Bearer $apiKey")
+        .get()
+        .build()
+
+    modelsHttpClient.newCall(request).execute().use { response ->
+        val body = response.body.string()
+        if (!response.isSuccessful) {
+            throw ModelListHttpException(
+                response.code,
+                "HTTP ${response.code} ${body.take(160)}".trim()
+            )
+        }
+        return parseModelList(body)
+    }
+}
+
+internal fun parseModelList(body: String): List<AiModelOption> {
+    val root = runCatching { json.parseToJsonElement(body) }.getOrNull() ?: return emptyList()
+    val array = when (root) {
+        is JsonArray -> root
+        is JsonObject -> (root["data"] as? JsonArray)
+            ?: (root["models"] as? JsonArray)
+            ?: JsonArray(emptyList())
+
+        else -> JsonArray(emptyList())
+    }
+
+    return array.mapNotNull { element ->
+        when (element) {
+            is JsonPrimitive -> element.contentOrNull
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { AiModelOption(it) }
+
+            is JsonObject -> {
+                val rawName = (element["name"] as? JsonPrimitive)?.contentOrNull
+                val id = ((element["id"] as? JsonPrimitive)?.contentOrNull
+                    ?: rawName?.removePrefix("models/"))
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return@mapNotNull null
+
+                val displayName = (element["displayName"] as? JsonPrimitive)?.contentOrNull
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() && it != id }
+                    ?: rawName?.removePrefix("models/")
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() && it != id }
+
+                AiModelOption(
+                    id = id,
+                    displayName = displayName,
+                    // 网关倍率字段格式不统一：多数是 `x0.08`，少数尾部带 ` credits` 字样
+                    credits = (element["credits"] as? JsonPrimitive)?.contentOrNull
+                        ?.trim()
+                        ?.substringBefore(' ')
+                        ?.takeIf { it.isNotBlank() },
+                )
             }
 
-            json.decodeFromString<OpenAiModelsResponse>(body)
-                .data
-                .map { it.id }
-                .filter { it.isNotBlank() }
-                .distinct()
-                .sorted()
+            else -> null
         }
-    }
+    }.distinctBy { it.id }.sortedBy { it.id }
 }
 
-internal fun buildOpenAiModelsUrl(baseUrl: String): String {
-    val trimmedUrl = baseUrl.trim().removeSuffix("/")
+/**
+ * 生成候选模型列表地址：
+ * - 已填 `/models` 时直接使用；
+ * - 去掉用户可能填进来的 `/chat/completions` 等接口后缀；
+ * - 主地址 404 时，对漏填 `/v1` 的 baseUrl 补全后再试一次。
+ */
+internal fun buildModelListUrls(baseUrl: String): List<String> {
+    val trimmed = baseUrl.trim().removeSuffix("/")
+    if (trimmed.isEmpty()) return emptyList()
+    if (trimmed.endsWith("/models")) return listOf(trimmed)
 
-    val normalizedBaseUrl = when {
-        trimmedUrl.endsWith("/models") -> return trimmedUrl
-        trimmedUrl.endsWith("/chat/completions") -> trimmedUrl.removeSuffix("/chat/completions")
-        else -> trimmedUrl
-    }
+    val root = trimmed
+        .removeSuffix("/chat/completions")
+        .removeSuffix("/completions")
+        .removeSuffix("/responses")
+        .removeSuffix("/messages")
+        .substringBefore(":generateContent")
+        .substringBefore(":streamGenerateContent")
+        .trimEnd('/')
+        .let { if (it.endsWith("/models")) it.substringBeforeLast("/models") else it }
 
-    return "$normalizedBaseUrl/models"
+    if (root.isEmpty()) return emptyList()
+
+    val primary = "$root/models"
+    val fallback = if (root.endsWith("/v1")) emptyList() else listOf("$root/v1/models")
+    return (listOf(primary) + fallback).distinct()
 }
-
-@Serializable
-internal data class OpenAiModelsResponse(
-    val data: List<OpenAiModel> = emptyList()
-)
-
-@Serializable
-internal data class OpenAiModel(
-    val id: String = ""
-)
 
 /** 删除确认弹窗。 */
 @Composable

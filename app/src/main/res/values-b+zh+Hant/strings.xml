@@ -189,6 +189,10 @@
     <string name="item_translation_frequency_penalty">頻率懲罰</string>
     <string name="item_translation_model_api_key_not_set">API 金鑰未設定</string>
     <string name="item_translation_model_empty">未找到可用模型</string>
+    <string name="item_translation_model_fetch">取得模型</string>
+    <string name="item_translation_model_fetching">取得中…</string>
+    <string name="item_translation_model_list_title">介面提供的模型</string>
+    <string name="item_translation_model_credits">倍率 %1$s</string>
     <string name="title_translation_model_load_failed">載入模型失敗</string>
     <string name="item_translation_only">僅顯示翻譯</string>
     <string name="alert_dialog_message_translation_clear">此操作將清空資料庫。是否繼續？</string>

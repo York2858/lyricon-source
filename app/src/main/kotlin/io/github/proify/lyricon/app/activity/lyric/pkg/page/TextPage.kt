@@ -47,8 +47,7 @@ import top.yukonga.miuix.kmp.utils.overScrollVertical
 @Composable
 fun TextPage(
     scrollBehavior: ScrollBehavior,
-    preferences: SharedPreferences,
-    floatingMode: Boolean = false
+    preferences: SharedPreferences
 ) {
     LazyColumn(
         modifier = Modifier
@@ -214,22 +213,20 @@ fun TextPage(
                     }
                 )
 
-                // 副行独立跟随封面取色（悬浮窗专属配置）
-                if (floatingMode) {
-                    var isExtractCoverColorForSecondary by rememberBooleanPreference(
-                        sharedPreferences = preferences,
-                        key = "lyric_style_text_extract_cover_color_secondary",
-                        defaultValue = TextStyle.Defaults.ENABLE_EXTRACT_COVER_COLOR_FOR_SECONDARY
-                    )
-                    SwitchPreference(
-                        checked = isExtractCoverColorForSecondary,
-                        title = stringResource(R.string.item_text_extract_cover_color_secondary),
-                        summary = stringResource(R.string.item_text_extract_cover_color_secondary_summary),
-                        startAction = { IconActions(painterResource(R.drawable.colorize_24px)) },
-                        enabled = isExtractCoverColorEnabled,
-                        onCheckedChange = { isExtractCoverColorForSecondary = it }
-                    )
-                }
+                // 副行独立跟随封面取色（状态栏与悬浮窗均可用）
+                var isExtractCoverColorForSecondary by rememberBooleanPreference(
+                    sharedPreferences = preferences,
+                    key = "lyric_style_text_extract_cover_color_secondary",
+                    defaultValue = TextStyle.Defaults.ENABLE_EXTRACT_COVER_COLOR_FOR_SECONDARY
+                )
+                SwitchPreference(
+                    checked = isExtractCoverColorForSecondary,
+                    title = stringResource(R.string.item_text_extract_cover_color_secondary),
+                    summary = stringResource(R.string.item_text_extract_cover_color_secondary_summary),
+                    startAction = { IconActions(painterResource(R.drawable.colorize_24px)) },
+                    enabled = isExtractCoverColorEnabled,
+                    onCheckedChange = { isExtractCoverColorForSecondary = it }
+                )
 
                 var isRainbowColorEnabled by rememberBooleanPreference(
                     sharedPreferences = preferences,
@@ -256,22 +253,20 @@ fun TextPage(
                     }
                 )
 
-                // 副行独立跟随彩虹渐变（悬浮窗专属配置）
-                if (floatingMode) {
-                    var isRainbowColorForSecondary by rememberBooleanPreference(
-                        sharedPreferences = preferences,
-                        key = "lyric_style_text_enable_rainbow_color_secondary",
-                        defaultValue = TextStyle.Defaults.ENABLE_RAINBOW_COLOR_FOR_SECONDARY
-                    )
-                    SwitchPreference(
-                        checked = isRainbowColorForSecondary,
-                        title = stringResource(R.string.item_text_enable_rainbow_color_secondary),
-                        summary = stringResource(R.string.item_text_enable_rainbow_color_secondary_summary),
-                        startAction = { IconActions(painterResource(R.drawable.ic_gradient)) },
-                        enabled = isRainbowColorEnabled,
-                        onCheckedChange = { isRainbowColorForSecondary = it }
-                    )
-                }
+                // 副行独立跟随彩虹渐变（状态栏与悬浮窗均可用）
+                var isRainbowColorForSecondary by rememberBooleanPreference(
+                    sharedPreferences = preferences,
+                    key = "lyric_style_text_enable_rainbow_color_secondary",
+                    defaultValue = TextStyle.Defaults.ENABLE_RAINBOW_COLOR_FOR_SECONDARY
+                )
+                SwitchPreference(
+                    checked = isRainbowColorForSecondary,
+                    title = stringResource(R.string.item_text_enable_rainbow_color_secondary),
+                    summary = stringResource(R.string.item_text_enable_rainbow_color_secondary_summary),
+                    startAction = { IconActions(painterResource(R.drawable.ic_gradient)) },
+                    enabled = isRainbowColorEnabled,
+                    onCheckedChange = { isRainbowColorForSecondary = it }
+                )
 
                 var isCustomColorEnabled by rememberBooleanPreference(
                     sharedPreferences = preferences,

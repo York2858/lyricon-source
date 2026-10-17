@@ -140,8 +140,7 @@ class FloatingColorStyleActivity : AbstractLyricActivity() {
                     when (page) {
                         0 -> TextPage(
                             scrollBehavior = scrollBehavior,
-                            preferences = preferences,
-                            floatingMode = true
+                            preferences = preferences
                         )
                         1 -> LogoPage(scrollBehavior, preferences)
                         2 -> AnimPage(scrollBehavior, preferences)
