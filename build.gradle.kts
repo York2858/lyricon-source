@@ -11,8 +11,12 @@ plugins {
 }
 
 extra["appPackageName"] = "io.github.proify.lyricon"
-extra["appVersionCode"] = 51
-extra["appVersionName"] = "1.0.40.rc"
+val appVersionProperties = java.util.Properties().apply {
+    providers.fileContents(layout.projectDirectory.file("version.properties")).asText.get()
+        .reader().use { load(it) }
+}
+extra["appVersionCode"] = appVersionProperties.getProperty("versionCode").toInt()
+extra["appVersionName"] = appVersionProperties.getProperty("versionName")
 extra["compileSdkVersion"] = 37
 extra["targetSdkVersion"] = 37
 extra["minSdkVersion"] = 29
@@ -48,6 +52,13 @@ val copyApksAll: TaskProvider<Task> = tasks.register("copyApks") {
 // 建立一个 Set 来记录我们已经创建过哪些 buildType 的 Zip 任务
 val buildTypeZipTasks = mutableSetOf<String>()
 
+// Windows 本机打包时，额外保留一份到 F:/output/<项目文件夹名>。
+val localApkExportDir = if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+    file("F:/output/${rootDir.name}")
+} else {
+    null
+}
+
 subprojects {
     plugins.withId("com.android.application") {
         val androidComponents = extensions.getByType<ApplicationAndroidComponentsExtension>()
@@ -59,6 +70,15 @@ subprojects {
             val versionName =
                 variant.outputs.firstOrNull()?.versionName?.getOrElse(project.version.toString())
                     ?: "1.0"
+            val exportedApkName: (String) -> String = { fileName ->
+                val abiSuffix = when {
+                    fileName.contains("arm64-v8a") -> "-arm64-v8a"
+                    fileName.contains("armeabi-v7a") -> "-armeabi-v7a"
+                    fileName.contains("x86_64") -> "-x86_64"
+                    else -> ""
+                }
+                "${moduleName}-${versionName}-${buildType}${abiSuffix}.apk"
+            }
 
             // --- A. 创建或获取该 BuildType 专属的 Zip 任务 ---
             val zipTaskName = "zip${buildType.replaceFirstChar { it.uppercase() }}Apks"
@@ -87,19 +107,34 @@ subprojects {
                     }
 
                     rename { fileName ->
-                        val abiSuffix = when {
-                            fileName.contains("arm64-v8a") -> "-arm64-v8a"
-                            fileName.contains("armeabi-v7a") -> "-armeabi-v7a"
-                            fileName.contains("x86_64") -> "-x86_64"
-                            else -> ""
-                        }
-                        "${moduleName}-${versionName}-${buildType}${abiSuffix}.apk"
+                        exportedApkName(fileName)
                     }
                     duplicatesStrategy = DuplicatesStrategy.INCLUDE
 
                     // 关键点：Copy 完后，自动触发该类型的 Zip 任务
                     finalizedBy(typeZipTask)
                 }
+
+            localApkExportDir?.let { exportDir ->
+                val exportTask = tasks.register<Copy>(
+                    "export${variantName.replaceFirstChar { it.uppercase() }}Apk"
+                ) {
+                    group = "build"
+                    description = "额外复制 $variantName APK 到 $exportDir"
+                    from(variant.artifacts.get(SingleArtifact.APK))
+                    into(exportDir)
+                    include("*.apk")
+                    rename { fileName -> exportedApkName(fileName) }
+                    // 每次打包都确认外部副本存在；不清理其他版本或其他构建类型。
+                    outputs.upToDateWhen { false }
+                    doLast {
+                        logger.lifecycle("APK 已额外复制到：$exportDir")
+                    }
+                }
+                copyTask.configure {
+                    finalizedBy(exportTask)
+                }
+            }
 
             // --- C. 任务挂载 ---
             copyApksAll.configure {

@@ -217,6 +217,9 @@ object SystemUIHooker : PackageHooker() {
     private fun initDataChannel() {
         val context = appContext ?: return
         LyriconBridge.routing(context) {
+            onQuery(io.github.proify.lyricon.lyric.ai.translate.TranslationLibraryContract.ROUTE) {
+                reply(Bundle().apply { putParcelable("endpoint", AiTranslator.libraryMessenger()) })
+            }
             onCommand(AppBridgeConstants.REQUEST_HIGHLIGHT_VIEW) {
                 val id = it.getString("id")
                 YLog.info(TAG, "App requested view highlight id: ")

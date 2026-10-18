@@ -48,6 +48,9 @@ data class AiChatStreamResult(
     val content: String
 )
 
+/** Typed conversation turns; callers cannot introduce additional system instructions as roles. */
+data class AiChatMessage(val content: String, val assistant: Boolean = false)
+
 /**
  * 统一的 OpenAI 兼容 Chat Completions 客户端（官方 openai-java SDK，底层 OkHttp）。
  *
@@ -132,7 +135,8 @@ object AiChatClient {
         systemPrompt: String,
         userPrompt: String,
         onReasoning: (String) -> Unit = {},
-        onContent: (String) -> Unit = {}
+        onContent: (String) -> Unit = {},
+        conversation: List<AiChatMessage> = emptyList()
     ): AiChatStreamResult? = withContext(Dispatchers.IO) {
         val apiKey = configs.apiKey ?: return@withContext null
         val baseUrl = resolveBaseUrl(configs)
@@ -147,7 +151,12 @@ object AiChatClient {
         var contentChars = 0
         var lastFinishReason: String? = null
         try {
-            val params = paramsBuilder(configs, systemPrompt, userPrompt).build()
+            val builder = paramsBuilder(configs, systemPrompt, userPrompt)
+            conversation.forEach { message ->
+                if (message.assistant) builder.addAssistantMessage(message.content)
+                else builder.addUserMessage(message.content)
+            }
+            val params = builder.build()
             Log.d(TAG, "Connecting to OpenAI compatible API: $baseUrl (stream=true)")
 
             val reasoning = StringBuilder()

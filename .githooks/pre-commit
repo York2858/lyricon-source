@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+root=$(git rev-parse --show-toplevel)
+if command -v powershell.exe >/dev/null 2>&1; then
+    exec powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$root/scripts/bump-version.ps1"
+elif command -v pwsh >/dev/null 2>&1; then
+    exec pwsh -NoProfile -NonInteractive -File "$root/scripts/bump-version.ps1"
+else
+    echo "Version hook requires PowerShell (powershell.exe or pwsh)." >&2
+    exit 1
+fi

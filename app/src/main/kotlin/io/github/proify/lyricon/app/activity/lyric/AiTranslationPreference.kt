@@ -7,6 +7,8 @@
 package io.github.proify.lyricon.app.activity.lyric
 
 import android.content.SharedPreferences
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -106,6 +108,13 @@ fun AiTranslationPreference(preferences: SharedPreferences) {
         startAction = { IconActions(painterResource(R.drawable.title_24px)) },
     )
 
+    val context = LocalContext.current
+    top.yukonga.miuix.kmp.preference.ArrowPreference(
+        title = "翻译数据库",
+        summary = "按歌曲查看、搜索、收藏和管理已保存的翻译",
+        startAction = { IconActions(painterResource(R.drawable.list_24px)) },
+        onClick = { context.startActivity(Intent(context, TranslationLibraryActivity::class.java)) }
+    )
     ClearTranslationDB()
 }
 

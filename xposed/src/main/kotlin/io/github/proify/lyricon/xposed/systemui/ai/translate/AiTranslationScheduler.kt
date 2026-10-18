@@ -122,8 +122,8 @@ internal class AiTranslationScheduler(
             currentCoroutineContext().ensureActive()
             val current = job.generation == generation.get()
             if (!results.isNullOrEmpty() && current) {
-                cache.putMemory(job.key, results)
-                cache.saveToDb(job.key, results)
+                cache.saveToDb(job.key, results, job.song, job.originalLines,
+                    job.configs, job.options, job.generation)
             }
             job.deferred.complete(if (current) results else null)
         } catch (e: CancellationException) {

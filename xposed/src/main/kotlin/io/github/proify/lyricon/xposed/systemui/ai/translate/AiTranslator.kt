@@ -42,6 +42,9 @@ object AiTranslator {
         generation = cacheGeneration,
         scope = scope
     )
+    private var libraryEndpoint: TranslationLibraryEndpoint? = null
+
+    fun libraryMessenger(): android.os.Messenger? = libraryEndpoint?.messenger
     private val scheduler = AiTranslationScheduler(
         cache = cache,
         generation = cacheGeneration,
@@ -51,6 +54,7 @@ object AiTranslator {
 
     fun init(context: Context) {
         cache.init(context)
+        if (libraryEndpoint == null) libraryEndpoint = TranslationLibraryEndpoint(context, cache)
         AiTranslationAppClient.initialize(context)
     }
 
@@ -100,12 +104,14 @@ object AiTranslator {
 
         cache.getFromMemory(songContentId)?.let {
             Log.d(TAG, "Memory cache hit for: ${song.name} [$songContentId]")
+            cache.enrichMetadata(songContentId, song, originalLines, configs, options)
             return AiTranslationApplicator.apply(song, it)
         }
 
         cache.getFromDb(songContentId)?.let {
             Log.d(TAG, "Database cache hit for: ${song.name} [$songContentId]")
-            cache.putMemory(songContentId, it)
+            cache.enrichMetadata(songContentId, song, originalLines, configs, options)
+            // A deletion between the DB lookup and metadata update must not repopulate memory.
             return AiTranslationApplicator.apply(song, it)
         }
 

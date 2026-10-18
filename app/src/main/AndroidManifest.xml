@@ -8,9 +8,12 @@
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="PackageVisibilityPolicy" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
     <queries>
         <package android:name="com.oplus.systemui.plugins" />
+        <intent><action android:name="android.intent.action.OPEN_DOCUMENT_TREE" /></intent>
     </queries>
 
     <!-- TODO: 临时允许 AI 自定义模型的 HTTP 明文地址；Tailscale 恢复后移除 usesCleartextTraffic。 -->
@@ -64,6 +67,12 @@
             android:label="@string/activity_ai_laboratory" />
 
         <activity
+            android:name=".activity.lyric.TranslationLibraryActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:label="翻译数据库" />
+
+        <activity
             android:name=".activity.lyric.AiConfigEditActivity"
             android:label="@string/activity_ai_laboratory" />
 
@@ -76,8 +85,8 @@
             android:name=".activity.lyric.AiExplainActivity"
             android:excludeFromRecents="true"
             android:exported="true"
-            android:noHistory="true"
             android:taskAffinity=""
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Translucent" />
 
         <activity
@@ -118,8 +127,8 @@
             android:name=".activity.lyric.AiExplainActivity"
             android:excludeFromRecents="true"
             android:exported="true"
-            android:noHistory="true"
             android:taskAffinity=""
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Translucent" />
 
         <activity
@@ -152,6 +161,15 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.explain.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/explain_share_paths" />
+        </provider>
         <receiver
             android:name=".receiver.LyricGestureReceiver"
             android:exported="true"

@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+# Partial commits use a temporary index. Synchronize only the generated version
+# entry in the real index, leaving every other staged selection untouched.
+unset GIT_INDEX_FILE
+blob=$(git rev-parse HEAD:version.properties)
+git update-index --cacheinfo "100644,$blob,version.properties"

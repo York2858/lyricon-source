@@ -9,6 +9,7 @@ package io.github.proify.lyricon.app.ai.explain
 import io.github.proify.lyricon.lyric.ai.core.AiChatClient
 import io.github.proify.lyricon.lyric.ai.core.AiChatStreamResult
 import io.github.proify.lyricon.lyric.ai.core.AiConfig
+import io.github.proify.lyricon.lyric.ai.core.AiChatMessage
 
 /**
  * AI 音乐解读客户端（App 进程业务层）。
@@ -41,22 +42,34 @@ object AiExplainClient {
         album: String,
         lyrics: String,
         onReasoning: (String) -> Unit,
-        onContent: (String) -> Unit
+        onContent: (String) -> Unit,
+        range: ExplainRange = ExplainRange.SONG,
+        angle: ExplainAngle = ExplainAngle.OVERVIEW,
+        lineIndex: Int = -1,
+        selectedLine: String = "",
+        conversation: List<AiChatMessage> = emptyList()
     ): AiChatStreamResult? {
         return AiChatClient.stream(
             configs = configs,
             systemPrompt = AiExplainPrompt.explainSystemPrompt(
                 customPrompt = customSystemPrompt,
+                range = range,
+                angle = angle,
             ),
             userPrompt = AiExplainPrompt.buildExplainUserPrompt(
                 targetLanguage,
                 title = title,
                 artist = artist,
                 album = album,
-                lyrics = lyrics
+                lyrics = lyrics,
+                range = range,
+                angle = angle,
+                lineIndex = lineIndex,
+                selectedLine = selectedLine
             ),
             onReasoning = onReasoning,
-            onContent = onContent
+            onContent = onContent,
+            conversation = conversation
         )
     }
 }
