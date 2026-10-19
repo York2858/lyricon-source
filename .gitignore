@@ -1,28 +1,50 @@
-*.iml
-.gradle
-/local.properties
+# Gradle, Kotlin and native build caches
+.gradle/
+.kotlin/
+build/
+.externalNativeBuild/
+.cxx/
 
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-
-/.kotlin/errors
-/.kotlin/sessions
-
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+# Local SDK paths and signing configuration
 local.properties
-/release.jks
+keystore.properties
+signing.properties
+*.jks
+*.keystore
 
+# Local IDE configuration and session state
+.idea/
+*.iml
+
+# Documentation and presentation assets (not used by Android builds)
+*.md
+/docs/
+/resources/
+
+# Local build exports and device captures
+/out/
+/output/
+/captures/
+*.apk
+*.apks
+*.aab
+*.hprof
+
+# Logs, temporary files and editor backups
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*~
+/tmp/
+/temp/
+
+# Operating system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local documentation dependencies
 node_modules/
-docs/.vitepress/cache/
-docs/.vitepress/dist/
-
-package.json
-package-lock.json
