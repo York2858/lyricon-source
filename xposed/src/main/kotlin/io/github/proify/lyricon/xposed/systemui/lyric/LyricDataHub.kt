@@ -123,9 +123,11 @@ object LyricDataHub : ActivePlayerListener {
 
                 // 2. 后台后置流水线：处理 AI 翻译等耗时扩展
                 val finalSong =
-                    LyricDataProcessor.executePostProcessingPipeline(preProcessed, processingStyle)
+                    LyricDataProcessor.executePostProcessingPipeline(preProcessed, processingStyle) { partial ->
+                        publishSong(partial, currentVersion)
+                    }
 
-                if (finalSong === preProcessed) return@launch
+                // The preferred result may equal the original while Google was shown in between.
                 if (isCurrentVersion(currentVersion)) {
                     publishSong(finalSong, currentVersion)
                 } else {

@@ -23,6 +23,10 @@ internal object ViewVisibilityPolicy {
         val v0 = views[0]
         val v1 = views.getOrNull(1)
         val s = input.style
+        if (s.auxiliaryLayout == AuxiliaryLineLayout.ROMA_THEN_TRANSLATION) {
+            applyFloating(views, s)
+            return
+        }
 
         val pSize = s.primary.size
         val sSize = s.secondary.size
@@ -47,6 +51,7 @@ internal object ViewVisibilityPolicy {
         v0.secondary.visibilityIfChanged = if (v0sVis) View.VISIBLE else View.GONE
         v1?.main?.visibilityIfChanged = if (v1mVis) View.VISIBLE else View.GONE
         v1?.secondary?.visibilityIfChanged = if (v1sVis) View.VISIBLE else View.GONE
+        views.forEach { it.tertiary.visibilityIfChanged = View.GONE }
 
         // Phase 4: hide v2+
         for (i in 2 until views.size) {
@@ -82,6 +87,24 @@ internal object ViewVisibilityPolicy {
                 val offset = (v.measuredHeight * (1f - scale)) / 2f
                 if (i == 0) offset else -offset
             } else 0f
+        }
+    }
+
+    private fun applyFloating(views: List<RichLyricLineView>, style: LyricViewStyle) {
+        val current = if (views.first().main.isFinished) views.getOrNull(1) ?: views.first() else views.first()
+        views.forEach { view ->
+            val active = view === current
+            val hasSecondary = active && view.secondary.model.let { it.text.isNotBlank() || it.words.isNotEmpty() }
+            val hasTertiary = active && view.tertiary.model.let { it.text.isNotBlank() || it.words.isNotEmpty() }
+            view.main.setTextSize(style.primary.size)
+            view.secondary.setTextSize(style.secondary.size)
+            view.tertiary.setTextSize(style.secondary.size)
+            view.main.visibilityIfChanged = if (active) View.VISIBLE else View.GONE
+            view.secondary.visibilityIfChanged = if (hasSecondary) View.VISIBLE else View.GONE
+            view.tertiary.visibilityIfChanged = if (hasTertiary) View.VISIBLE else View.GONE
+            view.visibilityIfChanged = if (active) View.VISIBLE else View.GONE
+            view.setRenderScale(if (hasSecondary || hasTertiary) style.scaleMultiLine.coerceIn(.1f, 2f) else 1f)
+            view.translationY = 0f
         }
     }
 }

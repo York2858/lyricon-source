@@ -7,6 +7,7 @@
 package io.github.proify.lyricon.xposed.systemui.lyric.processor
 
 import android.util.Log
+import io.github.proify.lyricon.lyric.ai.translate.TranslationDiagnostic
 import io.github.proify.lyricon.lyric.ai.core.AiConfigProvider
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.lyric.style.LyricStyle
@@ -53,16 +54,8 @@ class AiTranslationPostProcessor(
      * @param style 当前应用的歌词样式。
      * @return 如果功能已启用且配置有效（如 API Key 已填）则返回 true。
      */
-    override fun isEnabled(style: LyricStyle): Boolean {
-        val targetStyle = style.basicStyle
-        val config = configProvider.getActiveConfig()
-        val enabled = targetStyle.isAiTranslationEnable
-                && config?.isUsable == true
-        if (!enabled) {
-            Log.v(TAG, "Processor disabled: Config unusable or switch turned off.")
-        }
-        return enabled
-    }
+    // The processor also records why a request was not started.
+    override fun isEnabled(style: LyricStyle): Boolean = true
 
     /**
      * 执行翻译处理核心逻辑。
@@ -74,43 +67,39 @@ class AiTranslationPostProcessor(
      * @param style 当前关联的样式。
      * @return 处理后的歌曲对象（若无需翻译或翻译失败则返回原对象）。
      */
-    override suspend fun process(song: Song, style: LyricStyle): Song {
-        if (song.lyrics.isNullOrEmpty()) {
-            Log.d(TAG, "Skip process: Lyrics is null or empty.")
+    override suspend fun process(song: Song, style: LyricStyle): Song = process(song, style) {}
+
+    override suspend fun process(song: Song, style: LyricStyle, onProgress: (Song) -> Unit): Song {
+        val settings = style.basicStyle
+        val translationOptions = AiTranslationOptions(settings.aiTranslationTargetLanguage, settings.aiTranslationPrompt,
+            settings.googleTranslationFallback, settings.googleTranslationBaseUrl)
+        suspend fun skipped(code: String, reason: String, advice: String): Song {
+            AiTranslator.recordOutcome(song, "skipped", TranslationDiagnostic(code, reason, advice), options = translationOptions)
             return song
         }
-
-        // 处理自动忽略中文逻辑
-        if (style.basicStyle.isAiTranslationAutoIgnoreChinese && song.isFullyChinese()) {
-            Log.d(
-                TAG,
-                "Skip process: Song [${song.name}] is fully Chinese and auto-ignore is enabled."
-            )
-            return song
+        if (!song.lyrics.isNullOrEmpty()) AiTranslator.resolveWaitingForLyrics(song)
+        if (!settings.isAiTranslationEnable) return skipped("DISABLED", "AI 翻译未开启", "到词幕的 AI 实验室开启 AI 翻译。")
+        if (song.lyrics.isNullOrEmpty()) return skipped("NO_LYRICS", "当时尚未收到歌词，可能正在切歌或匹配", "播放器可能先发送歌曲信息，再发送完整歌词；歌词到达后会自动继续检查，并更新此记录。")
+        if (settings.isAiTranslationAutoIgnoreChinese && song.isFullyChinese())
+            return skipped("CHINESE", "整首歌词为中文，已按“跳过中文”设置跳过；数字、标点不影响判定", "需要翻译中文歌时，可在 AI 实验室关闭“跳过中文”。")
+        if (isFullyTranslated(song)) return skipped("ALREADY_TRANSLATED", "来源歌词的每一行都已有翻译", "直接使用已有译文，无需再次调用翻译服务。")
+        if (song.lyrics.orEmpty().none { line -> line.text.orEmpty().any { it.isLetter() } })
+            return skipped("NO_TEXT", "歌词只有空白、数字或标点，没有需要翻译的文字", "等待有实际歌词文字的歌曲，无需修改翻译配置。")
+        val translationConfig = configProvider.getActiveConfig()
+        if (translationConfig?.isUsable != true) {
+            val missing = if (translationConfig == null) "尚未选择可用的 AI 提供商" else buildList {
+                if (translationConfig.apiKey.isNullOrBlank()) add("API Key")
+                if (translationConfig.baseUrl.isNullOrBlank()) add("接口地址")
+                if (translationConfig.model.isNullOrBlank()) add("模型名称")
+            }.joinToString("、") + "未填写"
+            return skipped("CONFIG_MISSING", missing, "到 AI 实验室补全提供商配置。Google 仅在 AI 请求实际失败后保底。")
         }
-
-        // 如果所有行都有翻译，则不再消耗 API 额度
-        if (isFullyTranslated(song)) {
-            Log.d(TAG, "Skip process: Song [${song.name}] is already fully translated.")
-            return song
-        }
-
-        val translationConfig = configProvider.getActiveConfig() ?: run {
-            Log.w(TAG, "Abort process: No active AI config available.")
-            return song
-        }
-
-        // 翻译业务参数：目标语言 / 风格要求（来自样式配置，与连接配置分离）
-        val translationOptions = AiTranslationOptions(
-            targetLanguage = style.basicStyle.aiTranslationTargetLanguage,
-            stylePrompt = style.basicStyle.aiTranslationPrompt
-        )
 
         return withContext(Dispatchers.IO) {
             Log.i(TAG, "Starting AI translation for: ${song.name} - ${song.artist}")
 
             val translatedSong = try {
-                AiTranslator.translateSongSync(song, translationConfig, translationOptions)
+                AiTranslator.translateSongSync(song, translationConfig, translationOptions, onProgress)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -139,11 +128,11 @@ class AiTranslationPostProcessor(
     }
 
     /**
-     * 内部辅助：判断歌词文本是否主要由中文字符组成（忽略空白和标点）。
+     * 内部辅助：判断整首歌词是否为中文（忽略数字、空白和标点）。
      */
     private fun Song.isFullyChinese(): Boolean {
         return lyrics?.all { line ->
-            line.text?.filterNot { it.isWhitespace() || it.isPunctuation() }
+            line.text?.filterNot { it.isWhitespace() || it.isPunctuation() || it.isDigit() }
                 ?.all { it.isChinese() } ?: true
         } ?: true
     }

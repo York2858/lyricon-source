@@ -17,5 +17,7 @@ package io.github.proify.lyricon.xposed.systemui.ai.translate
  */
 data class AiTranslationOptions(
     val targetLanguage: String? = null,
-    val stylePrompt: String? = null
+    val stylePrompt: String? = null,
+    val googleFallback: Boolean = true,
+    val googleBaseUrl: String = "https://translate.googleapis.com/translate_a/single"
 )

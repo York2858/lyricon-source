@@ -91,6 +91,78 @@ class TranslationLibraryScreenTest {
         assertEquals("title", repository.lastQuery.sort)
     }
 
+    @Test fun allTabContainsOnlySuccessfulTranslationsAndKeepsDiagnosticsInTheirOwnTabs() {
+        repository.record = repository.record.copy(status = "error", reason = "连接超时")
+        show()
+        compose.onNodeWithText("刷新").performClick(); compose.waitUntil(5000) { !state.loading }
+        assertEquals("translated", repository.lastQuery.status)
+        compose.onNodeWithText("夜航").assertDoesNotExist()
+        compose.onNodeWithText("翻译报错").performClick()
+        compose.waitUntil(5000) { !state.loading && repository.lastQuery.status == "error" }
+        compose.onNodeWithText("夜航").assertIsDisplayed()
+        compose.onNodeWithText("全部").performClick()
+        compose.waitUntil(5000) { !state.loading && repository.lastQuery.status == "translated" }
+        compose.onNodeWithText("夜航").assertDoesNotExist()
+        repository.record = repository.record.copy(status = "translated")
+        compose.onNodeWithText("刷新").performClick(); compose.waitUntil(5000) { !state.loading }
+        compose.onNodeWithText("夜航").assertIsDisplayed()
+        compose.onNodeWithText("连接超时").assertDoesNotExist()
+        screenshot("translation-library-success-only")
+        compose.onNodeWithText("夜航").performClick(); compose.waitUntil(5000) { !state.loading }
+        compose.onNodeWithText("中文").assertIsDisplayed()
+        compose.onNodeWithText("翻译报错").assertDoesNotExist()
+    }
+
+    @Test fun skipAndErrorTabsShowSpecificReasonsAndFallbackResults() {
+        repository.record = repository.record.copy(status = "skipped", reason = "整首歌词为中文，已按设置跳过",
+            suggestion = "需要翻译中文歌时关闭跳过中文")
+        show()
+        compose.onNodeWithText("跳过翻译").performClick()
+        compose.waitUntil(5000) { !state.loading && repository.lastQuery.status == "skipped" }
+        compose.onNodeWithText("夜航").performClick(); compose.waitUntil(5000) { !state.loading }
+        compose.onNodeWithText("跳过翻译").performClick(); compose.waitUntil(5000) { !state.loading }
+        compose.onNodeWithText("整首歌词为中文，已按设置跳过").assertIsDisplayed()
+        compose.onNodeWithText("需要翻译中文歌时关闭跳过中文").assertIsDisplayed()
+        compose.onNodeWithText("复制原因").assertIsDisplayed()
+        compose.onNodeWithText("导出").assertDoesNotExist()
+        screenshot("translation-skip-reason")
+        compose.onNodeWithText("返回").performClick(); compose.waitUntil(5000) { !state.loading }
+        compose.onNodeWithText("返回").performClick(); compose.waitUntil(5000) { !state.loading }
+        repository.record = repository.record.copy(status = "error", reason = "API Key 无效或已过期（HTTP 401）",
+            suggestion = "请到 AI 实验室检查 API Key", resolution = "Google 保底翻译成功，已显示补译结果")
+        compose.onNodeWithText("翻译报错").performClick()
+        compose.waitUntil(5000) { !state.loading && repository.lastQuery.status == "error" }
+        compose.onNodeWithText("夜航").performClick(); compose.waitUntil(5000) { !state.loading }
+        compose.onNodeWithText("翻译报错").performClick(); compose.waitUntil(5000) { !state.loading }
+        compose.onNodeWithText("API Key 无效或已过期（HTTP 401）").assertIsDisplayed()
+        compose.onNodeWithText("Google 保底翻译成功，已显示补译结果").assertIsDisplayed()
+        compose.onNodeWithText("请到 AI 实验室检查 API Key").assertIsDisplayed()
+        screenshot("translation-error-google-fallback")
+    }
+    @Test fun waitingRecordRefreshShowsThatLyricsHaveArrived() {
+        repository.record = repository.record.copy(status = "skipped", reason = "当时尚未收到歌词，可能正在切歌或匹配")
+        show()
+        compose.onNodeWithText("跳过翻译").performClick()
+        compose.waitUntil(5000) { !state.loading && repository.lastQuery.status == "skipped" }
+        compose.onNodeWithText("夜航").performClick(); compose.waitUntil(5000) { !state.loading }
+        compose.onNodeWithText("跳过翻译").performClick(); compose.waitUntil(5000) { !state.loading }
+        repository.record = repository.record.copy(reason = "切歌或匹配时，歌词曾尚未到达",
+            resolution = "已收到 42 行歌词，其中 0 行罗马音、0 行已有翻译")
+        compose.onNodeWithText("刷新").performClick(); compose.waitUntil(5000) { !state.loading }
+        compose.onNodeWithText("已收到歌词").assertIsDisplayed()
+        compose.onNodeWithText("后续状态").assertIsDisplayed()
+        compose.onNodeWithText("已收到 42 行歌词，其中 0 行罗马音、0 行已有翻译").assertIsDisplayed()
+        screenshot("translation-lyrics-arrived")
+    }
+    @Test fun googlePublicEndpointReturnsAlignedTranslationsWhenLiveCheckIsRequested() = kotlinx.coroutines.runBlocking {
+        org.junit.Assume.assumeTrue(InstrumentationRegistry.getArguments().getString("googleLive") == "true")
+        val translated = GoogleLyricsTranslator.translate(listOf("Hello world", "Good night"), "中文")
+        assertEquals(2, translated.size)
+        assertTrue(translated.all { it.isNotBlank() })
+        assertNotEquals("Hello world", translated.first())
+        println("GOOGLE_LIVE alignedLines=${translated.size}")
+    }
+
     @Test fun readsAllPagesAndSearchesLastLineWithReadingControls() {
         show(); openReading()
         assertEquals(125, state.lines.size)
@@ -100,7 +172,7 @@ class TranslationLibraryScreenTest {
         screenshot("translation-library-reading")
         compose.onNode(hasSetTextAction()).performTextInput("译文 124")
         compose.onNode(hasText("译文 124") and hasSetTextAction().not()).assertIsDisplayed()
-        compose.onNodeWithText("只看原文").performClick()
+        compose.onNodeWithText("原文").performClick()
         compose.onNodeWithText("original 124").assertIsDisplayed()
         compose.onNode(hasText("译文 124") and hasSetTextAction().not()).assertDoesNotExist()
         compose.onNodeWithText("字号 +").performScrollTo().performClick()
@@ -152,14 +224,38 @@ class TranslationLibraryScreenTest {
 
     @Test fun exportChooserOffersFiveFormatsAndContentChoices() {
         show(); openReading()
-        compose.onNodeWithText("导出歌词").performClick()
+        compose.onNodeWithText("导出").performClick()
         listOf("纯文本 TXT", "逐行 LRC", "逐字 LRC", "增强逐字 LRC", "TTML", "双语", "仅原文", "仅译文", "音乐所在文件夹", "另存为").forEach {
             compose.onNodeWithTag("translation-export-options").performScrollToNode(hasText(it))
-            compose.onNodeWithText(it).assertExists()
+            compose.onNode(hasText(it) and hasAnyAncestor(hasTestTag("translation-export-options"))).assertExists()
         }
         compose.onNodeWithTag("translation-export-options").performScrollToNode(hasText("仅译文"))
         compose.onNodeWithText("仅译文").performClick()
         screenshot("translation-library-export", popup = true)
+    }
+
+    @Test fun exportSelectsFormatBeforeWritingAndFolderHelpIsCollapsed() {
+        repository.location = TranslationMusicLocation(audioFileName = "02. 夜航.m4a")
+        show(); openReading()
+        compose.onNodeWithText("导出").performClick()
+        compose.waitUntil(5000) { !state.locatingMusic && state.musicLocation != null }
+        compose.onNodeWithTag("translation-export-options").performScrollToNode(hasText("逐行 LRC"))
+        compose.onNodeWithText("逐行 LRC").performClick()
+        compose.onNodeWithTag("translation-export-options").assertExists()
+        compose.onNodeWithTag("translation-export-options").performScrollToNode(hasText("02. 夜航.lrc"))
+        compose.onNodeWithText("02. 夜航.lrc").assertExists()
+        compose.onNodeWithText("请进入 Music 或具体子文件夹。内部存储根目录、Download 根目录可能禁止授权；也可选择另存为。").assertDoesNotExist()
+        compose.onNodeWithText("无法授权文件夹？").performScrollTo().performClick()
+        compose.onNodeWithText("请进入 Music 或具体子文件夹。内部存储根目录、Download 根目录可能禁止授权；也可选择另存为。").assertExists()
+    }
+
+    @Test fun versionDetailsStayAvailableAfterCondensingTheReadingHeader() {
+        show(); openReading()
+        compose.onNodeWithText("版本信息").performClick()
+        compose.onNodeWithText("fixture").assertExists()
+        compose.onNodeWithText("125 句").assertExists()
+        compose.onNodeWithText("知道了").performClick()
+        compose.onNodeWithText("original 0").assertExists()
     }
 
     @Test fun musicFolderWithoutGrantRequestsDirectoryInsteadOfWriting() {
@@ -176,7 +272,7 @@ class TranslationLibraryScreenTest {
         repository.location = TranslationMusicLocation("content://com.android.externalstorage.documents/tree/primary%3AMusic%2FAlbum",
             "Music/Album", "02. 夜航.m4a", "已识别音乐所在文件夹")
         show(); openReading()
-        compose.onNodeWithText("导出歌词").performClick()
+        compose.onNodeWithText("导出").performClick()
         compose.waitUntil(5000) { !state.locatingMusic && state.musicLocation != null }
         compose.onNodeWithTag("translation-export-options").performScrollToNode(hasText("授权文件夹"))
         compose.onNodeWithText("已识别：Music/Album\n首次保存需授权此文件夹").assertExists()
@@ -296,10 +392,12 @@ class TranslationLibraryScreenTest {
         override suspend fun list(query: TranslationLibraryQuery): TranslationLibraryPage {
             if (fail) error("数据库暂不可用")
             lastQuery = query
-            return TranslationLibraryPage(if (deleted == 0) listOf(song) else emptyList(), false, if (deleted == 0) 1 else 0, 1, 125, if (record.favorite) 1 else 0, listOf("中文", "日语"))
+            val visible = deleted == 0 && (query.status.isBlank() || query.status == record.status) && (!query.favoritesOnly || record.favorite)
+            return TranslationLibraryPage(if (visible) listOf(song) else emptyList(), false, if (visible) 1 else 0, 1, 125, if (record.favorite) 1 else 0, listOf("中文", "日语"))
         }
-        override suspend fun versions(group: String, offset: Int) = TranslationVersionPage(if (deleted == 0) listOf(record) else emptyList(), false)
+        override suspend fun versions(group: String, offset: Int, status: String) = TranslationVersionPage(if (deleted == 0 && (status.isBlank() || status == record.status)) listOf(record) else emptyList(), false)
         override suspend fun lines(id: String, offset: Int): TranslationLinePage {
+            if (record.status != "translated") return TranslationLinePage(emptyList(), null)
             val end = minOf(offset + 60, 125)
             return TranslationLinePage((offset until end).map {
                 val start = it * 2000L
@@ -308,6 +406,6 @@ class TranslationLibraryScreenTest {
             }, end.takeIf { it < 125 })
         }
         override suspend fun favorite(id: String, value: Boolean) { record = record.copy(favorite = value) }
-        override suspend fun delete(ids: List<String>, groups: List<String>): Int { deleted++; return 1 }
+        override suspend fun delete(ids: List<String>, groups: List<String>, status: String): Int { deleted++; return 1 }
     }
 }

@@ -12,14 +12,11 @@ import android.graphics.ComposeShader
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.PorterDuff
+import android.graphics.Rect
 import android.graphics.Shader
 import android.text.TextPaint
 import androidx.core.graphics.withSave
-import io.github.proify.lyricon.lyric.view.line.effect.DEFAULT_WAVE_LIFT_EM
-import io.github.proify.lyricon.lyric.view.line.effect.EMPHASIS_LIFT_EM
 import io.github.proify.lyricon.lyric.view.line.effect.LyricEffectEngine
-import io.github.proify.lyricon.lyric.view.line.effect.MIN_STRENGTH
-import io.github.proify.lyricon.lyric.view.line.effect.SCALE_OVERFLOW_FRACTION
 import io.github.proify.lyricon.lyric.view.line.effect.UnitTransform
 import io.github.proify.lyricon.lyric.view.line.model.EmphasisGroup
 import io.github.proify.lyricon.lyric.view.line.model.LyricModel
@@ -38,10 +35,14 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
     val isRainbowHl get() = hlColors.size > 1
 
     private val fontMetrics = Paint.FontMetrics()
+    private val glyphBounds = Rect()
+    private var metricsModel: LyricModel? = null
+    private var glyphTop = 0f
+    private var glyphBottom = 0f
     private var baselineOffset = 0f
 
     /** 文本自然高度（descent - ascent），用于计算空间受限时的动画强度。 */
-    private var textHeight = 0f
+    private var naturalHalfHeight = 0f
 
     private val bgRainbowCache = RainbowGradientCache()
     private val hlRainbowCache = RainbowGradientCache()
@@ -59,10 +60,16 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
         if (highlight.isNotEmpty()) hlColors = highlight
     }
 
-    fun updateMetrics(paint: TextPaint) {
+    fun updateMetrics(paint: TextPaint, model: LyricModel? = null) {
+        metricsModel = model
         paint.getFontMetrics(fontMetrics)
         baselineOffset = -(fontMetrics.descent + fontMetrics.ascent) / 2f
-        textHeight = fontMetrics.descent - fontMetrics.ascent
+        val text = model?.wordText.orEmpty()
+        if (text.isNotEmpty()) paint.getTextBounds(text, 0, text.length, glyphBounds)
+        glyphTop = if (text.isNotEmpty()) glyphBounds.top.toFloat() else fontMetrics.ascent
+        glyphBottom = if (text.isNotEmpty()) glyphBounds.bottom.toFloat() else fontMetrics.descent
+        naturalHalfHeight = VerticalTextSpace.naturalHalfHeight(
+            glyphTop, fontMetrics.ascent, fontMetrics.descent, glyphBottom)
     }
 
     fun clearShaderCache() {
@@ -96,6 +103,7 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
         hlPaint: TextPaint,
         normPaint: TextPaint
     ) {
+        if (metricsModel !== model) updateMetrics(bgPaint, model)
         val originalBgAlpha = bgPaint.alpha
         val originalHlAlpha = hlPaint.alpha
         val y = (viewHeight / 2f) + baselineOffset
@@ -108,6 +116,11 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
                     else -> 0f
                 }
                 translate(xOffset, 0f)
+                // Keep expanded edge glyphs inside the real viewport, rather than cutting
+                // them at the untransformed start/end of the lyric's advance width.
+                val visibleLeft = -xOffset
+                val visibleRight = viewWidth - xOffset
+                val highlightRight = if (highlightWidth >= model.width) visibleRight else highlightWidth
 
                 if (scrollOnly) {
                     canvas.drawText(model.wordText, 0f, y, normPaint)
@@ -122,13 +135,13 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
 
                 if (bgPaint.shader != null) bgPaint.alpha = 255
                 if (charMotionEnabled) {
-                    val bgClipStart = if (useGradient) 0f else highlightWidth
+                    val bgClipStart = if (useGradient || highlightWidth <= 0f) visibleLeft else highlightRight
                     drawAnimatedUnits(
                         canvas,
                         model,
                         highlightWidth,
                         bgClipStart,
-                        Float.MAX_VALUE,
+                        visibleRight,
                         viewHeight,
                         y,
                         bgPaint,
@@ -136,7 +149,7 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
                     )
                 } else if (!useGradient) {
                     canvas.withSave {
-                        canvas.clipRect(highlightWidth, 0f, Float.MAX_VALUE, viewHeight.toFloat())
+                        canvas.clipRect(highlightRight, 0f, visibleRight, viewHeight.toFloat())
                         canvas.drawText(model.wordText, 0f, y, bgPaint)
                     }
                 } else {
@@ -145,7 +158,7 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
 
                 if (highlightWidth > 0f && model.width > 0f) {
                     canvas.withSave {
-                        canvas.clipRect(0f, 0f, highlightWidth, viewHeight.toFloat())
+                        canvas.clipRect(visibleLeft, 0f, highlightRight, viewHeight.toFloat())
 
                         if (useGradient) {
                             val baseShader = if (isRainbowHl) {
@@ -175,8 +188,8 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
                                 canvas,
                                 model,
                                 highlightWidth,
-                                0f,
-                                highlightWidth,
+                                visibleLeft,
+                                highlightRight,
                                 viewHeight,
                                 y,
                                 hlPaint,
@@ -332,18 +345,14 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
      * 计算空间受限时的动画强度。
      *
      * 视图高度不足「完整动画所需高度」（文本自然高度 + 上浮余量 + 缩放溢出）时，
-     * 按比例收缩特效幅度（下限 [MIN_STRENGTH]），避免字形被挤出视图边界；
+     * 按实际剩余空间收缩特效幅度，避免字形被挤出视图边界；
      * 高度充足时保持全强度，动画与 [io.github.proify.lyricon.lyric.view.line.LyricLineView]
      * 预留的动画高度对应。
      */
     private fun computeStrength(textSize: Float, viewHeight: Int): Float {
-        if (textHeight <= 0f || viewHeight <= 0) return 1f
-        // 与 LyricLineView.onMeasure 的动画高度预留一致：WaveLift 上浮 + 强调上浮
-        // + 强调缩放（1.12 上限）的对称溢出。
-        val fullHeight = textHeight +
-                textSize * (DEFAULT_WAVE_LIFT_EM + EMPHASIS_LIFT_EM) +
-                textHeight * SCALE_OVERFLOW_FRACTION
-        return (viewHeight / fullHeight).coerceIn(MIN_STRENGTH, 1f)
+        val motion = VerticalTextSpace.motionHalfHeight(glyphTop, glyphBottom,
+            textSize, effectEngine.maximumWaveLift, effectEngine.hasEmphasis)
+        return VerticalTextSpace.strength(viewHeight, naturalHalfHeight, motion)
     }
 
     /**

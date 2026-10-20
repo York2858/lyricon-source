@@ -43,7 +43,7 @@ internal class TranslationBatchExporter(private val context: Context, private va
                 val label = listOf(song.artist, song.title.ifBlank { "未知歌曲" }).filter { it.isNotBlank() }.joinToString(" - ")
                 onProgress(BatchExportProgress(position, songs.size, label))
                 try {
-                    val version = repository.versions(song.key, 0).versions.firstOrNull() ?: error("这首歌已没有翻译记录")
+                    val version = repository.versions(song.key, 0, "translated").versions.firstOrNull() ?: error("这首歌已没有翻译记录")
                     val text = withContext(Dispatchers.IO) { exportTranslationLyrics(version, readAllLines(version.id), options.lyrics) }
                     val location = try { repository.musicLocation(version.id) }
                         catch (e: CancellationException) { throw e }

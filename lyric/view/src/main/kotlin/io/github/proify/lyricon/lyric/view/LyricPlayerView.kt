@@ -88,6 +88,47 @@ open class LyricPlayerView(
     }
     private val defaultLp = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
 
+    private var heightBudgets: Map<View, Int> = emptyMap()
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        heightBudgets = emptyMap()
+        if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED) {
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+            return
+        }
+        super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+        val rows = (0 until childCount).map { getChildAt(it) }.filter { it.visibility != GONE }
+        val margins = rows.sumOf {
+            val lp = it.layoutParams as MarginLayoutParams
+            lp.topMargin + lp.bottomMargin
+        }
+        val available = (MeasureSpec.getSize(heightMeasureSpec) - paddingTop - paddingBottom - margins)
+            .coerceAtLeast(0)
+        if (rows.sumOf { it.measuredHeight } > available) {
+            heightBudgets = rows.zip(LyricHeightFit.allocate(rows.map { it.measuredHeight }, available)).toMap()
+        }
+        try {
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        } finally {
+            heightBudgets = emptyMap()
+        }
+    }
+
+    override fun measureChildWithMargins(
+        child: View, parentWidthMeasureSpec: Int, widthUsed: Int,
+        parentHeightMeasureSpec: Int, heightUsed: Int
+    ) {
+        val budget = heightBudgets[child]
+        if (budget == null) {
+            super.measureChildWithMargins(child, parentWidthMeasureSpec, widthUsed, parentHeightMeasureSpec, heightUsed)
+        } else {
+            val lp = child.layoutParams as MarginLayoutParams
+            val height = budget + paddingTop + paddingBottom + lp.topMargin + lp.bottomMargin
+            super.measureChildWithMargins(child, parentWidthMeasureSpec, widthUsed,
+                MeasureSpec.makeMeasureSpec(height, MeasureSpec.AT_MOST), 0)
+        }
+    }
+
     private val tempMatches = mutableListOf<TimedLine>()
 
     private var layoutTransitionHandler: LayoutTransitionX? = null

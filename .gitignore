@@ -14,21 +14,33 @@ signing.properties
 
 # Local IDE configuration and session state
 .idea/
+.vscode/
 *.iml
+*.code-workspace
 
 # Documentation and presentation assets (not used by Android builds)
 *.md
 /docs/
 /resources/
+**/ic_launcher-playstore.png
 
 # Local build exports and device captures
 /out/
 /output/
 /captures/
+/screenshots/
+/device-captures/
+/diagnostics/
+/reports/
+/test-results/
 *.apk
 *.apks
 *.aab
 *.hprof
+*.trace
+*.perfetto-trace
+*.heapdump
+/*.html
 
 # Logs, temporary files and editor backups
 *.log
@@ -48,3 +60,12 @@ Desktop.ini
 
 # Local documentation dependencies
 node_modules/
+
+# Local Python helper caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local coding assistant state
+.codex/
+.agents/

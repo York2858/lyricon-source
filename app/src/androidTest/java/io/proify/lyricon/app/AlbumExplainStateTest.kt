@@ -116,8 +116,8 @@ class AlbumExplainStateTest {
             onMain { state!!.exportText(Uri.fromFile(output)) }
             await { it.notice == "已导出整张专辑的逐曲解读" }
             val text = output.readText()
-            assertTrue(text.indexOf("歌曲：3. Holy, Holy") < text.indexOf("歌曲：4. The New Sound"))
-            assertTrue(text.contains("编曲与律动：测试配器"))
+            assertTrue(text.indexOf("歌曲 3：Holy, Holy") < text.indexOf("歌曲 4：The New Sound"))
+            assertTrue(text.contains("编曲与律动\n测试配器"))
         } finally { output.delete() }
     }
 

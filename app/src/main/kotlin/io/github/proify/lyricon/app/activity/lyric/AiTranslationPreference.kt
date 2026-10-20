@@ -8,6 +8,7 @@ package io.github.proify.lyricon.app.activity.lyric
 
 import android.content.SharedPreferences
 import android.content.Intent
+import android.os.SystemClock
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,9 +22,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.key
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLocale
@@ -43,6 +47,12 @@ import io.github.proify.lyricon.app.compose.preference.rememberBooleanPreference
 import io.github.proify.lyricon.app.compose.preference.rememberStringPreference
 import io.github.proify.lyricon.common.PackageNames
 import io.github.proify.lyricon.lyric.style.TextStyle
+import io.github.proify.lyricon.lyric.ai.translate.GoogleLyricsTranslator
+import io.github.proify.lyricon.lyric.ai.translate.TranslationErrors
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
@@ -51,6 +61,7 @@ import top.yukonga.miuix.kmp.basic.InputField
 import top.yukonga.miuix.kmp.basic.SearchBar
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Search
 import top.yukonga.miuix.kmp.preference.SwitchPreference
@@ -92,30 +103,78 @@ fun AiTranslationPreference(preferences: SharedPreferences) {
     SwitchPreference(
         checked = isAiTranslationAutoIgnoreChinese,
         onCheckedChange = { isAiTranslationAutoIgnoreChinese = it },
-        title = stringResource(R.string.item_translation_auto_ignore_chinese),
-        summary = stringResource(R.string.item_translation_auto_ignore_chinese_summary),
+        title = "跳过中文",
         startAction = { IconActions(painterResource(R.drawable.translate_24px)) },
     )
 
+    var googleFallback by rememberBooleanPreference(preferences, "ai_translation_google_fallback", true)
+    SwitchPreference(checked = googleFallback, onCheckedChange = { googleFallback = it },
+        title = "Google 同步翻译（AI 优先）", startAction = { IconActions(painterResource(R.drawable.translate_24px)) })
     TranslationTargetLanguagePreference(preferences)
-
-    StringInputPreference(
-        preferences = preferences,
-        key = TextStyle.KEY_AI_TRANSLATION_PROMPT,
-        title = stringResource(R.string.item_translation_custom_prompt),
-        dialogSummary = stringResource(R.string.dialog_summary_translation_custom_prompt),
-        defaultValue = TextStyle.Defaults.AI_TRANSLATION_PROMPT,
-        startAction = { IconActions(painterResource(R.drawable.title_24px)) },
-    )
 
     val context = LocalContext.current
     top.yukonga.miuix.kmp.preference.ArrowPreference(
-        title = "翻译数据库",
-        summary = "按歌曲查看、搜索、收藏和管理已保存的翻译",
+        title = "翻译库",
         startAction = { IconActions(painterResource(R.drawable.list_24px)) },
         onClick = { context.startActivity(Intent(context, TranslationLibraryActivity::class.java)) }
     )
-    ClearTranslationDB()
+    var more by rememberSaveable { mutableStateOf(false) }
+    top.yukonga.miuix.kmp.preference.ArrowPreference(title = if (more) "收起更多设置" else "更多设置", onClick = { more = !more })
+    if (more) {
+        StringInputPreference(preferences = preferences, key = "ai_translation_google_url",
+            title = "Google 翻译接口", dialogSummary = "默认使用 Lyrico 的 Google 翻译接口；需要可访问该服务的网络。",
+            defaultValue = "https://translate.googleapis.com/translate_a/single",
+            startAction = { IconActions(painterResource(R.drawable.translate_24px)) })
+        val googleUrl by rememberStringPreference(preferences, "ai_translation_google_url", GoogleLyricsTranslator.DEFAULT_URL)
+        val language by rememberStringPreference(preferences, TextStyle.KEY_AI_TRANSLATION_TARGET_LANGUAGE)
+        key(googleUrl, language) { GoogleTranslationPing(googleUrl.orEmpty(), language) }
+        StringInputPreference(
+            preferences = preferences,
+            key = TextStyle.KEY_AI_TRANSLATION_PROMPT,
+            title = stringResource(R.string.item_translation_custom_prompt),
+            dialogSummary = stringResource(R.string.dialog_summary_translation_custom_prompt),
+            defaultValue = TextStyle.Defaults.AI_TRANSLATION_PROMPT,
+            startAction = { IconActions(painterResource(R.drawable.title_24px)) },
+        )
+
+        ClearTranslationDB()
+    }
+}
+
+@Composable
+private fun GoogleTranslationPing(url: String, language: String?) {
+    val scope = rememberCoroutineScope()
+    var testing by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<String?>(null) }
+    var succeeded by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        TextButton(text = if (testing) "正在测试…" else "Ping Google 翻译", enabled = !testing,
+            modifier = Modifier.fillMaxWidth(), onClick = {
+                if (!testing) {
+                    testing = true; result = null; succeeded = false
+                    scope.launch {
+                        val started = SystemClock.elapsedRealtime()
+                        try {
+                            val translated = withTimeout(15000) {
+                                GoogleLyricsTranslator.translate(listOf("Hello"), language, url)
+                            }.single()
+                            succeeded = true
+                            result = "接口可用 · ${SystemClock.elapsedRealtime() - started} ms\nHello → $translated"
+                        } catch (_: TimeoutCancellationException) {
+                            result = "测试超时 · 15 秒\n请检查网络、代理和 Google 接口地址。"
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            val diagnostic = TranslationErrors.from(e)
+                            result = "测试失败 · ${SystemClock.elapsedRealtime() - started} ms\n${diagnostic.reason}\n${diagnostic.suggestion}"
+                        } finally { testing = false }
+                    }
+                }
+            })
+        if (testing) Text("正在请求当前接口，最多等待 15 秒", color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+        result?.let { Text(it, color = if (succeeded) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantSummary) }
+    }
 }
 
 @Composable

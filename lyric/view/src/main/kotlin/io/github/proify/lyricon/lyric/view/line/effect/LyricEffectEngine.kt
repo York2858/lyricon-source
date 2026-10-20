@@ -27,6 +27,11 @@ class LyricEffectEngine(effects: List<LyricUnitEffect>) {
 
     /** 当前特效链（按注册顺序叠加）。 */
     val effectList: List<LyricUnitEffect> get() = effects
+    internal val maximumWaveLift: Float
+        get() = effects.maxOfOrNull { effect ->
+            if (effect is WaveLiftEffect) maxOf(effect.cjkLiftFactor, effect.latinLiftFactor) else 0f
+        } ?: 0f
+    internal val hasEmphasis: Boolean get() = effects.any { it is EmphasizeGlowEffect }
 
     /** 整体替换特效链。 */
     fun setEffects(newEffects: List<LyricUnitEffect>) {

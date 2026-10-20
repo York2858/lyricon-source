@@ -10,7 +10,8 @@ import android.content.SharedPreferences
 import android.content.Intent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import io.github.proify.lyricon.app.R
@@ -31,34 +32,35 @@ import top.yukonga.miuix.kmp.preference.ArrowPreference
 fun AiExplainPreference(preferences: SharedPreferences) {
     val context = LocalContext.current
     Column {
-    ArrowPreference(
-        title = "专辑解读",
-        summary = "按曲序逐首解读歌词、编曲与律动，保存并继续阅读整张专辑",
-        startAction = { IconActions(painterResource(R.drawable.ic_music_note)) },
-        onClick = { context.startActivity(Intent(context, AiExplainActivity::class.java)
-            .putExtra(AiExplainActivity.EXTRA_OPEN_ALBUM, true)) },
-    )
-    ArrowPreference(
-        title = "解读历史与收藏",
-        summary = "按歌曲查找解读，回看收藏的版本",
-        startAction = { IconActions(painterResource(R.drawable.explain_history)) },
-        onClick = { context.startActivity(Intent(context, AiExplainActivity::class.java)
-            .putExtra(AiExplainActivity.EXTRA_OPEN_HISTORY, true)) },
-    )
-    ArrowPreference(
-        title = "快捷追问设置",
-        summary = "自定义“继续聊聊”里的快捷问题",
-        startAction = { IconActions(painterResource(R.drawable.psychology_24px)) },
-        onClick = { context.startActivity(Intent(context, AiExplainActivity::class.java)
-            .putExtra(AiExplainActivity.EXTRA_OPEN_QUICK_PROMPTS, true)) },
-    )
-    StringInputPreference(
-        preferences = preferences,
-        key = AiExplainPrompt.KEY_CUSTOM_SYSTEM_PROMPT,
-        title = stringResource(R.string.item_ai_explain_custom_prompt),
-        dialogSummary = stringResource(R.string.dialog_summary_ai_explain_custom_prompt),
-        defaultValue = AiExplainPrompt.DEFAULT_SYSTEM_PROMPT,
-        startAction = { IconActions(painterResource(R.drawable.psychology_24px)) },
-    )
+        ArrowPreference(
+            title = "专辑解读",
+            startAction = { IconActions(painterResource(R.drawable.ic_music_note)) },
+            onClick = { context.startActivity(Intent(context, AiExplainActivity::class.java)
+                .putExtra(AiExplainActivity.EXTRA_OPEN_ALBUM, true)) },
+        )
+        ArrowPreference(
+            title = "历史与收藏",
+            startAction = { IconActions(painterResource(R.drawable.explain_history)) },
+            onClick = { context.startActivity(Intent(context, AiExplainActivity::class.java)
+                .putExtra(AiExplainActivity.EXTRA_OPEN_HISTORY, true)) },
+        )
+        ArrowPreference(
+            title = "快捷追问",
+            startAction = { IconActions(painterResource(R.drawable.psychology_24px)) },
+            onClick = { context.startActivity(Intent(context, AiExplainActivity::class.java)
+                .putExtra(AiExplainActivity.EXTRA_OPEN_QUICK_PROMPTS, true)) },
+        )
+        var more by rememberSaveable { mutableStateOf(false) }
+        ArrowPreference(title = if (more) "收起更多设置" else "更多设置", onClick = { more = !more })
+        if (more) {
+            StringInputPreference(
+                preferences = preferences,
+                key = AiExplainPrompt.KEY_CUSTOM_SYSTEM_PROMPT,
+                title = stringResource(R.string.item_ai_explain_custom_prompt),
+                dialogSummary = stringResource(R.string.dialog_summary_ai_explain_custom_prompt),
+                defaultValue = AiExplainPrompt.DEFAULT_SYSTEM_PROMPT,
+                startAction = { IconActions(painterResource(R.drawable.psychology_24px)) },
+            )
+        }
     }
 }

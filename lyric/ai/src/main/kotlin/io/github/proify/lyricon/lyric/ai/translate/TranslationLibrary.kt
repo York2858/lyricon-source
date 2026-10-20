@@ -19,13 +19,14 @@ object TranslationLibraryContract {
 @Serializable
 data class TranslationLibraryQuery(
     val search: String = "", val language: String = "", val favoritesOnly: Boolean = false,
-    val sort: String = "newest", val offset: Int = 0,
+    val sort: String = "newest", val offset: Int = 0, val status: String = "",
 )
 
 @Serializable
 data class TranslationSongEntry(
     val key: String, val title: String, val artist: String, val versions: Int,
     val lines: Int, val favorites: Int, val updatedAt: Long, val languages: String,
+    val skipped: Int = 0, val errors: Int = 0, val translated: Int = 0,
 )
 
 @Serializable
@@ -33,6 +34,7 @@ data class TranslationLibraryPage(
     val songs: List<TranslationSongEntry>, val hasMore: Boolean,
     val totalSongs: Int, val totalVersions: Int, val totalLines: Int,
     val totalFavorites: Int, val languages: List<String>,
+    val totalSkipped: Int = 0, val totalErrors: Int = 0,
 )
 
 @Serializable
@@ -41,6 +43,8 @@ data class TranslationVersion(
     val model: String, val createdAt: Long, val lineCount: Int, val favorite: Boolean,
     val hasOriginal: Boolean,
     val hasTiming: Boolean = false, val hasWordTiming: Boolean = false,
+    val status: String = "translated", val reason: String = "", val suggestion: String = "",
+    val resolution: String = "", val eventCount: Int = 1, val source: String = "ai",
 )
 
 @Serializable

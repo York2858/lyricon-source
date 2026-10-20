@@ -55,15 +55,27 @@ data class ExplainRecord(
 
 data class ExplainSongHistory(val key: String, val song: ExplainSong, val records: List<ExplainRecord>)
 
+internal fun explainSongIdentity(song: ExplainSong): List<String> {
+    fun normalized(value: String) = value.trim().replace(Regex("\\s+"), " ").lowercase(Locale.ROOT)
+    val title = normalized(song.title)
+    return if (title.isBlank() || title in listOf("未知歌曲", "unknown song", "unknown"))
+        listOf("lyrics", normalized(song.artist), song.lyrics)
+    else listOf("song", title, normalized(song.artist))
+}
+
+internal fun latestExplainReading(records: List<ExplainRecord>, selection: ExplainRecord, anyAngle: Boolean): ExplainRecord? =
+    records.asSequence().filter {
+        explainSongIdentity(it.song) == explainSongIdentity(selection.song) && it.range == selection.range &&
+            (anyAngle || it.angle == selection.angle) && it.angle in anglesFor(selection.range) &&
+            (selection.range == ExplainRange.SONG ||
+                (it.lineIndex == selection.lineIndex && it.song.lines == selection.song.lines)) &&
+            it.turns.any { turn -> turn.content.isNotBlank() }
+    }.maxByOrNull { it.updatedAt }
+
 /** Group the view, preserving every saved version. Album availability can vary between launches. */
 fun groupExplainHistory(records: List<ExplainRecord>, favoritesOnly: Boolean = false): List<ExplainSongHistory> {
-    fun normalized(value: String) = value.trim().replace(Regex("\\s+"), " ").lowercase(Locale.ROOT)
     fun key(song: ExplainSong): String {
-        val title = normalized(song.title)
-        val identity = if (title.isBlank() || title in listOf("未知歌曲", "unknown song", "unknown"))
-            listOf("lyrics", normalized(song.artist), song.lyrics)
-        else listOf("song", title, normalized(song.artist))
-        return MessageDigest.getInstance("SHA-256").digest(Json.encodeToString(identity).toByteArray(Charsets.UTF_8))
+        return MessageDigest.getInstance("SHA-256").digest(Json.encodeToString(explainSongIdentity(song)).toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
     }
     return records.asSequence().filter { !favoritesOnly || it.favorite }.sortedByDescending { it.updatedAt }

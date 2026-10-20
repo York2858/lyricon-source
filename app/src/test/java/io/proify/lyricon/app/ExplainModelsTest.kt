@@ -58,6 +58,19 @@ class ExplainModelsTest {
         assertFalse(ExplainAngle.PHRASE in anglesFor(ExplainRange.SONG))
         assertTrue(ExplainAngle.LANGUAGE in anglesFor(ExplainRange.LINE))
     }
+
+    @Test fun restoredReadingMatchesScopeAngleAndRepeatedLineOccurrence() {
+        val first = record("first").copy(updatedAt = 100)
+        val second = record("second").copy(lineIndex = 1, updatedAt = 50)
+        val whole = record("whole").copy(range = ExplainRange.SONG, angle = ExplainAngle.OVERVIEW, updatedAt = 1)
+        val imagery = whole.copy(id = "imagery", angle = ExplainAngle.IMAGERY, updatedAt = 2)
+        val records = listOf(first, second, whole, imagery,
+            imagery.copy(id = "other-artist", song = song.copy(artist = "其他歌手"), updatedAt = 500))
+        assertEquals("second", latestExplainReading(records, second, true)?.id)
+        assertEquals("imagery", latestExplainReading(records, whole, true)?.id)
+        assertEquals("whole", latestExplainReading(records, whole, false)?.id)
+        assertNull(latestExplainReading(records, second.copy(song = song.copy(lines = song.lines.reversed())), true))
+    }
     @Test fun promptIdentifiesRepeatedLineAndAudioLimitations() {
         val prompt = AiExplainPrompt.buildExplainUserPrompt("zh-CN", song.title, song.artist, song.album,
             song.lyrics, ExplainRange.LINE, ExplainAngle.IMAGERY, 1, "同一句")

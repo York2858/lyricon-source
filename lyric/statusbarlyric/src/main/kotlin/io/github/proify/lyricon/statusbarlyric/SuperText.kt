@@ -19,6 +19,7 @@ import io.github.proify.android.extensions.sp
 import io.github.proify.lyricon.lyric.style.LyricStyle
 import io.github.proify.lyricon.lyric.style.TextStyle
 import io.github.proify.lyricon.lyric.view.AnimParams
+import io.github.proify.lyricon.lyric.view.AuxiliaryLineLayout
 import io.github.proify.lyricon.lyric.view.Highlight
 import io.github.proify.lyricon.lyric.view.LyricPlayerView
 import io.github.proify.lyricon.lyric.view.LyricViewStyle
@@ -44,6 +45,7 @@ class SuperText(context: Context) : LyricPlayerView(context) {
     }
 
     var linkedTextView: TextView? = null
+    var isFloatingLyric: Boolean = false
 
     var eventListener: EventListener? = null
 
@@ -97,6 +99,11 @@ class SuperText(context: Context) : LyricPlayerView(context) {
         }
 
         return LyricViewStyle(
+            auxiliaryLayout = when {
+                isFloatingLyric -> AuxiliaryLineLayout.ROMA_THEN_TRANSLATION
+                style.basicStyle.secondaryLineShowsRoma -> AuxiliaryLineLayout.ROMA_FIRST
+                else -> AuxiliaryLineLayout.TRANSLATION_FIRST
+            },
             primary = TextLook(
                 color = resolvePrimaryColor(textStyle),
                 size = fontSize,

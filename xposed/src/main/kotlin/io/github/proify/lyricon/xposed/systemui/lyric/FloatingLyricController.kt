@@ -100,6 +100,7 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
         floatingLyricEnabled = lyricStyle.basicStyle.manualFloatingLyricEnabled
 
         val view = lyricView ?: return
+        view.textView.isFloatingLyric = true
         view.forceAutoWidth = true
         view.updateStyle(lyricStyle)
         // 翻译行显示受悬浮窗自身样式控制，样式热更新后立即应用

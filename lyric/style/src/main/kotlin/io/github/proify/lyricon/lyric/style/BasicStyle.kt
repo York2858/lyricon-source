@@ -61,6 +61,8 @@ data class BasicStyle(
     var aiTranslationTargetLanguage: String = TextStyle.Defaults.AI_TRANSLATION_TARGET_LANGUAGE_DISPLAY_NAME,
     var aiTranslationPrompt: String = TextStyle.Defaults.AI_TRANSLATION_PROMPT,
     var isAiTranslationAutoIgnoreChinese: Boolean = false,
+    var googleTranslationFallback: Boolean = true,
+    var googleTranslationBaseUrl: String = "https://translate.googleapis.com/translate_a/single",
 
     /* ---------------- 悬浮窗歌词 ---------------- */
 
@@ -229,6 +231,9 @@ data class BasicStyle(
                 KEY_AI_TRANSLATION_PROMPT,
                 TextStyle.Defaults.AI_TRANSLATION_PROMPT
             ) ?: TextStyle.Defaults.AI_TRANSLATION_PROMPT
+        googleTranslationFallback = preferences.getBoolean("ai_translation_google_fallback", true)
+        googleTranslationBaseUrl = preferences.getString("ai_translation_google_url", "https://translate.googleapis.com/translate_a/single")
+            ?: "https://translate.googleapis.com/translate_a/single"
         isAiTranslationAutoIgnoreChinese =
             preferences.getBoolean(
                 KEY_AI_TRANSLATION_IGNORE_CHINESE,
@@ -272,6 +277,8 @@ data class BasicStyle(
 
         editor.putInt("lyric_style_base_chinese_conversion_mode", chineseConversionMode)
 
+        editor.putBoolean("ai_translation_google_fallback", googleTranslationFallback)
+        editor.putString("ai_translation_google_url", googleTranslationBaseUrl)
         editor.putBoolean(KEY_AI_TRANSLATION_ENABLED, isAiTranslationEnable)
         editor.putString(KEY_AI_TRANSLATION_TARGET_LANGUAGE, aiTranslationTargetLanguage)
         editor.putString(KEY_AI_TRANSLATION_PROMPT, aiTranslationPrompt)

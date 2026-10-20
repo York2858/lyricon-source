@@ -15,6 +15,7 @@ import androidx.core.graphics.withScale
 import androidx.core.view.forEach
 import io.github.proify.lyricon.lyric.model.interfaces.IRichLyricLine
 import io.github.proify.lyricon.lyric.view.line.LyricLineView
+import kotlin.math.ceil
 
 @SuppressLint("ViewConstructor")
 class RichLyricLineView(
@@ -41,6 +42,8 @@ class RichLyricLineView(
 
     var renderScale = 1.0f
         private set
+
+    private var fittedRenderScale = 1f
 
     private val assembler = LyricLineAssembler(
         displayTranslation, displayRoma,
@@ -132,6 +135,8 @@ class RichLyricLineView(
     }
 
     fun setStyle(style: LyricViewStyle) {
+        val layoutChanged = assembler.layout != style.auxiliaryLayout
+        assembler.layout = style.auxiliaryLayout
         assembler.updateFlags(
             displayTranslation, displayRoma,
             style.primary.relativeProgress, style.primary.relativeHighlight
@@ -166,6 +171,7 @@ class RichLyricLineView(
             style.fadingEdge,
             style.wordMotion
         )
+        if (layoutChanged) refreshLines()
     }
 
     override fun updateColor(primary: IntArray, background: IntArray, highlight: IntArray) {
@@ -185,20 +191,29 @@ class RichLyricLineView(
     }
 
     override fun onMeasure(wSpec: Int, hSpec: Int) {
-        if (renderScale != 1.0f && renderScale > 0) {
-            val origW = MeasureSpec.getSize(wSpec)
-            val mode = MeasureSpec.getMode(wSpec)
-            val compW = (origW / renderScale).toInt()
-            super.onMeasure(MeasureSpec.makeMeasureSpec(compW, mode), hSpec)
-            setMeasuredDimension(origW, measuredHeight)
-        } else {
-            super.onMeasure(wSpec, hSpec)
+        val width = MeasureSpec.getSize(wSpec)
+        val widthMode = MeasureSpec.getMode(wSpec)
+        val unlimitedHeight = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+        fun measureContent(scale: Float) {
+            val logicalWidth = if (scale > 0f) ceil(width / scale).toInt() else width
+            super.onMeasure(MeasureSpec.makeMeasureSpec(logicalWidth, widthMode), unlimitedHeight)
         }
+
+        // LinearLayout normally spends the height on the first row and gives the
+        // translation only what remains. Measure every row at its full animated
+        // height first, then fit the complete stack into the status bar together.
+        measureContent(renderScale)
+        val contentHeight = measuredHeight
+        val desiredHeight = maxOf(contentHeight, ceil(contentHeight * renderScale).toInt())
+        val height = resolveSize(desiredHeight, hSpec)
+        fittedRenderScale = LyricHeightFit.scale(contentHeight, height, renderScale)
+        if (fittedRenderScale != renderScale) measureContent(fittedRenderScale)
+        setMeasuredDimension(width, height)
     }
 
     override fun dispatchDraw(canvas: Canvas) {
-        if (renderScale != 1.0f) {
-            canvas.withScale(renderScale, renderScale, 0f, height / 2f) {
+        if (fittedRenderScale != 1.0f) {
+            canvas.withScale(fittedRenderScale, fittedRenderScale, 0f, height / 2f) {
                 super.dispatchDraw(this)
             }
         } else {
@@ -209,6 +224,7 @@ class RichLyricLineView(
     fun setRenderScale(scale: Float) {
         if (renderScale != scale) {
             renderScale = scale
+            requestLayout()
             invalidate()
         }
     }

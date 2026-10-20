@@ -25,6 +25,8 @@ import io.github.proify.lyricon.lyric.ai.core.AiConfig
 import java.util.Locale
 import io.github.proify.lyricon.lyric.ai.translate.TranslationTiming
 import io.github.proify.lyricon.lyric.ai.translate.TranslationWord
+import io.github.proify.lyricon.lyric.ai.translate.TranslationDiagnostic
+import io.github.proify.lyricon.lyric.ai.translate.TranslationErrors
 
 /** 已完成整首歌翻译的双级缓存：内存 LRU + SQLite 持久化。 */
 internal class AiTranslationCache(
@@ -72,7 +74,7 @@ internal class AiTranslationCache(
             db.query(
                 DatabaseHelper.TABLE_NAME,
                 arrayOf(DatabaseHelper.COLUMN_DATA),
-                "${DatabaseHelper.COLUMN_ID} = ?",
+                "${DatabaseHelper.COLUMN_ID} = ? AND status = 'translated'",
                 arrayOf(key),
                 null, null, null
             ).use { cursor ->
@@ -91,7 +93,7 @@ internal class AiTranslationCache(
     suspend fun saveToDb(key: String, items: List<TranslationItem>,
         song: Song? = null, lines: List<String> = emptyList(),
         configs: AiConfig? = null, options: AiTranslationOptions? = null,
-        expectedGeneration: Int = generation.get()) {
+        expectedGeneration: Int = generation.get(), engine: String = "ai") {
         val jsonData = json.encodeToString(items)
         dbMutex.withLock {
             if (generation.get() != expectedGeneration) return@withLock
@@ -102,6 +104,7 @@ internal class AiTranslationCache(
                     put(DatabaseHelper.COLUMN_ID, key)
                     put(DatabaseHelper.COLUMN_DATA, jsonData)
                     put(DatabaseHelper.COLUMN_TIMESTAMP, System.currentTimeMillis())
+                    put("status", "translated"); put("source", engine)
                     put("line_count", items.size)
                     put("search_text", (lines + items.map { it.translation }).joinToString("\n"))
                 }
@@ -112,6 +115,46 @@ internal class AiTranslationCache(
                 Log.e(TAG, "Failed to save translation to DB: ${it.message}")
             }
         }
+    }
+
+    suspend fun saveOutcome(song: Song, status: String, diagnostic: TranslationDiagnostic,
+        configs: AiConfig? = null, options: AiTranslationOptions = AiTranslationOptions(),
+        resolution: String = "", expectedGeneration: Int = generation.get()) = dbMutex.withLock {
+        require(status in setOf("skipped", "error"))
+        if (generation.get() != expectedGeneration) return@withLock
+        val db = dbHelper?.writableDatabase ?: return@withLock
+        val lines = song.lyrics.orEmpty().map { it.text.orEmpty() }
+        val key = "outcome:$status:${diagnostic.code}:" + AiTranslationKey.calculate(configs ?: AiConfig(), options, song, lines)
+        val now = System.currentTimeMillis()
+        var count = 1
+        db.rawQuery("SELECT created_at,event_count FROM ai_cache WHERE song_id = ?", arrayOf(key)).use {
+            if (it.moveToFirst()) count = it.getInt(1) + if (now - it.getLong(0) >= 30000) 1 else 0
+        }
+        val reason = TranslationErrors.redact(diagnostic.reason, configs?.apiKey, 1800)
+        val values = metadata(song, lines, configs, options).apply {
+            put("song_id", key); put("translation_json", "[]"); put("created_at", now)
+            put("status", status); put("reason_code", diagnostic.code); put("reason", reason)
+            put("suggestion", TranslationErrors.redact(diagnostic.suggestion, configs?.apiKey, 1800))
+            put("resolution", resolution); put("event_count", count); put("source", "ai")
+            put("line_count", 0); put("search_text", (lines + reason + diagnostic.suggestion).joinToString("\n"))
+        }
+        if (db.update("ai_cache", values, "song_id = ?", arrayOf(key)) == 0) db.insertOrThrow("ai_cache", null, values)
+    }
+
+    /** A metadata-only event is historical once the same track's lyrics arrive. */
+    suspend fun resolveWaitingForLyrics(song: Song) = dbMutex.withLock {
+        if (song.name.isNullOrBlank()) return@withLock
+        val lines = song.lyrics.orEmpty().filter { !it.text.isNullOrBlank() || !it.words.isNullOrEmpty() }
+        if (lines.isEmpty()) return@withLock
+        val db = dbHelper?.writableDatabase ?: return@withLock
+        val reason = "切歌或匹配时，歌词曾尚未到达"
+        val suggestion = "此为此前的等待记录；当前已收到歌词。翻译结果请查看这首歌的最新记录。"
+        val resolution = "已收到 ${lines.size} 行歌词，其中 ${lines.count { !it.roma.isNullOrBlank() }} 行罗马音、${lines.count { !it.translation.isNullOrBlank() || !it.translationWords.isNullOrEmpty() }} 行已有翻译"
+        db.update("ai_cache", ContentValues().apply {
+            put("reason", reason); put("suggestion", suggestion); put("resolution", resolution)
+            put("search_text", (lines.map { it.text.orEmpty() } + reason + suggestion + resolution).joinToString("\n"))
+        }, "status = 'skipped' AND reason_code = 'NO_LYRICS' AND lower(trim(title)) = lower(trim(?)) AND lower(trim(artist)) = lower(trim(?))",
+            arrayOf(song.name.orEmpty(), song.artist.orEmpty()))
     }
 
     suspend fun enrichMetadata(key: String, song: Song, lines: List<String>, configs: AiConfig,
@@ -201,7 +244,7 @@ internal class AiTranslationCache(
 
         companion object {
             const val DATABASE_NAME = "lyricon_translation.db"
-            const val DATABASE_VERSION = 3
+            const val DATABASE_VERSION = 4
             const val TABLE_NAME = "ai_cache"
             const val COLUMN_ID = "song_id"
             const val COLUMN_DATA = "translation_json"
@@ -225,7 +268,14 @@ internal class AiTranslationCache(
                     timing_json TEXT NOT NULL DEFAULT '',
                     has_word_timing INTEGER NOT NULL DEFAULT 0,
                     line_count INTEGER NOT NULL DEFAULT 0,
-                    favorite INTEGER NOT NULL DEFAULT 0
+                    favorite INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'translated',
+                    source TEXT NOT NULL DEFAULT 'ai',
+                    reason_code TEXT NOT NULL DEFAULT '',
+                    reason TEXT NOT NULL DEFAULT '',
+                    suggestion TEXT NOT NULL DEFAULT '',
+                    resolution TEXT NOT NULL DEFAULT '',
+                    event_count INTEGER NOT NULL DEFAULT 1
                 )
             """.trimIndent()
             )
@@ -249,6 +299,14 @@ internal class AiTranslationCache(
                             "$COLUMN_ID = ?", arrayOf(cursor.getString(0)))
                     }
                 }
+            }
+            if (oldVersion < 4) {
+                db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN status TEXT NOT NULL DEFAULT 'translated'")
+                db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN source TEXT NOT NULL DEFAULT 'ai'")
+                listOf("reason_code", "reason", "suggestion", "resolution").forEach {
+                    db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $it TEXT NOT NULL DEFAULT ''")
+                }
+                db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN event_count INTEGER NOT NULL DEFAULT 1")
             }
             if (oldVersion < 3) {
                 db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN timing_json TEXT NOT NULL DEFAULT ''")

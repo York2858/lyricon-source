@@ -385,6 +385,18 @@ class BasicLyricStyleActivity : AbstractLyricActivity() {
                             title = stringResource(R.string.item_lyrics_enabled),
                             summary = stringResource(R.string.item_lyrics_enabled_summary),
                         )
+                        var showRoma by rememberBooleanPreference(
+                            preferences, "lyric_style_base_secondary_line_shows_roma",
+                            BasicStyle.Defaults.SECONDARY_LINE_SHOWS_ROMA
+                        )
+                        SwitchPreference(
+                            checked = showRoma,
+                            onCheckedChange = { showRoma = it },
+                            startAction = { IconActions(painterResource(R.drawable.translate_24px)) },
+                            title = stringResource(R.string.item_base_secondary_line_shows_roma),
+                            summary = stringResource(if (showRoma) R.string.item_base_secondary_line_shows_roma_summary
+                                else R.string.item_base_secondary_line_translation_first_summary),
+                        )
                     }
                     if (isFloatingStyleMode) {
                         var isManualFloatingEnabled by rememberBooleanPreference(

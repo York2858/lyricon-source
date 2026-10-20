@@ -20,7 +20,10 @@ data class LyricViewStyle(
     val scaleMultiLine: Float = 1f,
     val animation: AnimParams = AnimParams(),
     val placeholder: TitleSlot = TitleSlot.NAME_ARTIST,
+    val auxiliaryLayout: AuxiliaryLineLayout = AuxiliaryLineLayout.TRANSLATION_FIRST,
 )
+
+enum class AuxiliaryLineLayout { TRANSLATION_FIRST, ROMA_FIRST, ROMA_THEN_TRANSLATION }
 
 data class TextLook(
     val color: IntArray = intArrayOf(Color.WHITE),

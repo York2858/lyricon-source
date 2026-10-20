@@ -27,4 +27,7 @@ interface PostProcessor {
      * @return 加工完成后的新歌曲对象
      */
     suspend fun process(song: Song, style: LyricStyle): Song
+
+    /** Optional intermediate results while a preferred engine is still running. */
+    suspend fun process(song: Song, style: LyricStyle, onProgress: (Song) -> Unit): Song = process(song, style)
 }

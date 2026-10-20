@@ -8,6 +8,8 @@ package io.github.proify.lyricon.xposed.systemui.ai.translate
 
 import android.content.Context
 import android.util.Log
+import io.github.proify.android.extensions.md5
+import io.github.proify.lyricon.lyric.ai.translate.*
 import io.github.proify.lyricon.lyric.ai.core.AiConfig
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.xposed.systemui.ai.translate.AiTranslator.translateSongSync
@@ -52,16 +54,34 @@ object AiTranslator {
         maxPending = MAX_PENDING_TRANSLATIONS
     )
 
+    private val googleScheduler = AiTranslationScheduler(cache, cacheGeneration, 2, 2,
+        request = { _, options, _, texts -> AiTranslationRequester.requestGoogle(options, texts) }, engine = "google")
+
+    suspend fun recordOutcome(song: Song, status: String, reason: TranslationDiagnostic,
+        configs: AiConfig? = null, options: AiTranslationOptions = AiTranslationOptions(), resolution: String = "",
+        expectedGeneration: Int = cacheGeneration.get()) {
+        try { cache.saveOutcome(song, status, reason, configs, options, resolution, expectedGeneration) }
+        catch (e: CancellationException) { throw e }
+        catch (e: Exception) { Log.w(TAG, "Unable to save translation outcome: ${e.javaClass.simpleName}") }
+    }
+
     fun init(context: Context) {
         cache.init(context)
         if (libraryEndpoint == null) libraryEndpoint = TranslationLibraryEndpoint(context, cache)
         AiTranslationAppClient.initialize(context)
     }
 
+    suspend fun resolveWaitingForLyrics(song: Song) {
+        try { cache.resolveWaitingForLyrics(song) }
+        catch (e: CancellationException) { throw e }
+        catch (e: Exception) { Log.w(TAG, "Unable to update lyric arrival: ${e.javaClass.simpleName}") }
+    }
+
     suspend fun translateSongSync(
         song: Song,
         configs: AiConfig,
-        options: AiTranslationOptions = AiTranslationOptions()
+        options: AiTranslationOptions = AiTranslationOptions(),
+        onProgress: (Song) -> Unit = {}
     ): Song {
         if (!configs.isUsable) {
             Log.w(TAG, "Translation skipped: Configs not usable (missing API Key or disabled).")
@@ -70,7 +90,7 @@ object AiTranslator {
         if (song.lyrics.isNullOrEmpty()) return song
 
         return try {
-            translateSong(song, configs, options)
+            translateSong(song, configs, options, onProgress)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -89,14 +109,15 @@ object AiTranslator {
 
     fun clearCache(callback: () -> Unit) {
         Log.i(TAG, "Clearing all translation caches (Memory & DB)...")
-        scheduler.cancelAll()
+        scheduler.cancelAll(); googleScheduler.cancelAll()
         cache.clear(callback)
     }
 
     private suspend fun translateSong(
         song: Song,
         configs: AiConfig,
-        options: AiTranslationOptions
+        options: AiTranslationOptions,
+        onProgress: (Song) -> Unit
     ): Song {
         val currentLyrics = song.lyrics ?: return song
         val originalLines = currentLyrics.map { it.text?.trim() ?: "" }
@@ -119,12 +140,26 @@ object AiTranslator {
             TAG,
             "Cache miss. Waiting for AI translation: ${song.name} (${originalLines.size} lines)"
         )
-        val apiResults =
-            scheduler.awaitTranslation(songContentId, configs, options, song, originalLines)
-        if (apiResults.isNullOrEmpty()) {
-            Log.w(TAG, "Failed to get translation from API.")
-            return song
+        val generation = cacheGeneration.get()
+        val googleConfig = AiConfig(model = "Google Translate", baseUrl = options.googleBaseUrl)
+        val googleOptions = options.copy(stylePrompt = null)
+        val googleKey = "google:$songContentId:${configs.apiKey.orEmpty().md5()}:" + AiTranslationKey.calculate(googleConfig, googleOptions, song, originalLines)
+        val cachedGoogle = if (options.googleFallback) (cache.getFromMemory(googleKey) ?: cache.getFromDb(googleKey))?.also {
+            cache.enrichMetadata(googleKey, song, originalLines, googleConfig, googleOptions)
+        } else null
+        val outcome = TranslationFallback.run(options.googleFallback,
+            ai = { scheduler.awaitTranslation(songContentId, configs, options, song, originalLines) },
+            google = { cachedGoogle ?: googleScheduler.awaitTranslation(googleKey, googleConfig, googleOptions, song, originalLines) },
+            onGoogleReady = { onProgress(AiTranslationApplicator.apply(song, it)) })
+        outcome.aiError?.let { aiError ->
+            val diagnostic = if (outcome.googleError == null) aiError else TranslationDiagnostic(
+                "AI_AND_GOOGLE", "AI：${aiError.reason}\nGoogle：${outcome.googleError.reason}",
+                "AI：${aiError.suggestion}\nGoogle：${outcome.googleError.suggestion}", aiError.httpStatus)
+            recordOutcome(song, "error", diagnostic, configs, options,
+                when { outcome.usedGoogle -> "Google 保底翻译成功，已显示补译结果"
+                    outcome.googleError != null -> "AI 与 Google 均失败，保留原歌词及已有译文"
+                    else -> "Google 同步翻译未开启，保留原歌词及已有译文" }, generation)
         }
-        return AiTranslationApplicator.apply(song, apiResults)
+        return outcome.items?.let { AiTranslationApplicator.apply(song, it) } ?: song
     }
 }

@@ -32,6 +32,83 @@ class TranslationLibraryStoreTest {
             listOf("intro", "instrumental", "the sea waits"), AiConfig(model = "fixture"), AiTranslationOptions(language))
     }
 
+    @Test fun skippedAndFailedRecordsStayGroupedAndDeletingErrorsKeepsSuccessfulTranslations() = runBlocking {
+        cache.init(context); save("success")
+        val song = Song(name = "夜航", artist = "林屿", lyrics = listOf(RichLyricLine(text = "the sea waits")))
+        cache.saveOutcome(song, "skipped", TranslationDiagnostic("CHINESE", "按设置跳过中文", "关闭跳过中文"))
+        cache.saveOutcome(song, "error", TranslationErrors.http(401, "bad key secret-key", "secret-key"),
+            AiConfig(apiKey = "secret-key", model = "fixture"), resolution = "Google 保底翻译成功")
+        val all = store.list(TranslationLibraryQuery()).songs.single()
+        assertEquals(3, all.versions); assertEquals(1, all.errors); assertEquals(1, all.skipped); assertEquals(1, all.translated)
+        val failed = store.list(TranslationLibraryQuery(status = "error")).songs.single()
+        assertEquals(1, failed.versions)
+        val detail = store.versions(failed.key, 0, "error").versions.single()
+        assertTrue(detail.reason.contains("HTTP 401")); assertFalse(detail.reason.contains("secret-key"))
+        assertTrue(detail.suggestion.contains("API Key")); assertTrue(detail.resolution.contains("Google"))
+        assertTrue(store.lines(detail.id, 0).lines.isEmpty())
+        assertNull(cache.getFromDb(detail.id))
+        assertEquals(0, store.favorite(detail.id, true))
+        assertEquals(1, store.delete(emptyList(), listOf(failed.key), "error"))
+        assertTrue(store.list(TranslationLibraryQuery(status = "error")).songs.isEmpty())
+        assertEquals(2, store.list(TranslationLibraryQuery()).songs.single().versions)
+        assertNotNull(cache.getFromDb("success"))
+    }
+    @Test fun repeatedSkipIsDeduplicatedAndGoogleTranslationsAreMarkedWithTheirEngine() = runBlocking {
+        cache.init(context)
+        val song = Song(name = "验证歌曲", lyrics = listOf(RichLyricLine(text = "hello")))
+        repeat(3) { cache.saveOutcome(song, "skipped", TranslationDiagnostic("DISABLED", "未开启翻译", "开启开关")) }
+        val group = store.list(TranslationLibraryQuery()).songs.single()
+        val skip = store.versions(group.key, 0).versions.single()
+        assertEquals(1, skip.eventCount)
+        cache.saveToDb("google", listOf(TranslationItem(0, "你好")), song, listOf("hello"),
+            AiConfig(model = "Google Translate"), AiTranslationOptions("中文"), engine = "google")
+        assertEquals("google", store.versions(group.key, 0, "translated").versions.single().source)
+    }
+
+    @Test fun laterLyricsResolveTheMatchingTracksWaitingRecordWithoutHidingTranslationErrors() = runBlocking {
+        cache.init(context)
+        val metadata = Song(name = "等待歌曲", artist = "歌手")
+        val missing = TranslationDiagnostic("NO_LYRICS", "没有收到可翻译的歌词", "等待来源发送")
+        cache.saveOutcome(metadata, "skipped", missing)
+        cache.saveOutcome(metadata.copy(artist = "其他歌手"), "skipped", missing)
+        cache.saveOutcome(metadata, "error", TranslationErrors.from(java.net.SocketTimeoutException()))
+        val group = store.list(TranslationLibraryQuery()).songs.first { it.artist == "歌手" }
+        val before = store.versions(group.key, 0, "skipped").versions.single()
+        cache.resolveWaitingForLyrics(metadata.copy(lyrics = listOf(RichLyricLine(text = "hello", roma = "hero", translation = "你好"))))
+        val after = store.versions(group.key, 0, "skipped").versions.single()
+        assertEquals(before.id, after.id)
+        assertEquals(before.createdAt, after.createdAt)
+        assertTrue(after.reason.contains("曾尚未到达"))
+        assertTrue(after.resolution.contains("已收到 1 行歌词"))
+        assertTrue(after.resolution.contains("1 行罗马音、1 行已有翻译"))
+        assertEquals(1, store.versions(group.key, 0, "error").versions.size)
+        val other = store.list(TranslationLibraryQuery()).songs.first { it.artist == "其他歌手" }
+        assertEquals("", store.versions(other.key, 0, "skipped").versions.single().resolution)
+        cache.resolveWaitingForLyrics(metadata)
+        assertEquals(after.resolution, store.versions(group.key, 0, "skipped").versions.single().resolution)
+        store.delete(listOf(after.id), emptyList())
+        cache.resolveWaitingForLyrics(metadata.copy(lyrics = listOf(RichLyricLine(text = "hello"))))
+        assertTrue(store.versions(group.key, 0, "skipped").versions.isEmpty())
+    }
+
+    @Test fun successfulTranslationFilterExcludesDiagnosticOnlySongsAndVersionsAndDeletionPreservesDiagnostics() = runBlocking {
+        cache.init(context); save("success")
+        val metadata = Song(name = "夜航", artist = "林屿")
+        cache.saveOutcome(metadata, "error", TranslationErrors.http(401))
+        cache.saveOutcome(metadata.copy(name = "只有等待记录"), "skipped", TranslationDiagnostic("NO_LYRICS", "等待歌词", "稍后检查"))
+        val page = store.list(TranslationLibraryQuery(status = "translated"))
+        assertEquals(1, page.totalSongs)
+        val song = page.songs.single()
+        assertEquals("夜航", song.title)
+        assertEquals(1, song.versions); assertEquals(0, song.errors); assertEquals(0, song.skipped)
+        assertEquals(listOf("success"), store.versions(song.key, 0, "translated").versions.map { it.id })
+        assertTrue(store.list(TranslationLibraryQuery(search = "只有等待记录", status = "translated")).songs.isEmpty())
+        assertEquals(1, store.delete(emptyList(), listOf(song.key), "translated"))
+        assertEquals(1, store.versions(song.key, 0, "error").versions.size)
+        assertTrue(store.list(TranslationLibraryQuery(status = "translated")).songs.isEmpty())
+        assertEquals(1, store.list(TranslationLibraryQuery(status = "skipped")).totalSongs)
+    }
+
     @Test fun groupsVersionsAndFindsOriginalsTranslationsAndLiteralWildcards() = runBlocking {
         cache.init(context)
         save("a"); save("b", language = "日语", text = "Japanese version"); save("c", "另一首", text = "100% completed")

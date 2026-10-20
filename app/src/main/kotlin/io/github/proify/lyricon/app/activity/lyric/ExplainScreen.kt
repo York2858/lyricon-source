@@ -88,10 +88,12 @@ internal fun ExplainScreen(
     var historySongKey by rememberSaveable { mutableStateOf("") }
     var historyFavoritesOnly by rememberSaveable { mutableStateOf(false) }
     var readingHistory by rememberSaveable { mutableStateOf(false) }
+    var settingsReturnPage by rememberSaveable { mutableStateOf("main") }
     var pendingDeletion by remember { mutableStateOf<List<ExplainRecord>>(emptyList()) }
     var deleteTitle by remember { mutableStateOf("") }
     val pageStates = rememberSaveableStateHolder()
     var menu by remember { mutableStateOf(false) }
+    var showInfo by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboard.current
@@ -114,6 +116,7 @@ internal fun ExplainScreen(
             page == "history" && openHistory && state.record.song.lines.isEmpty() -> onClose()
             page == "quick_prompts" && openQuickPrompts && state.record.song.lines.isEmpty() -> onClose()
             page == "album" && openAlbum && state.record.song.lines.isEmpty() -> onClose()
+            page == "settings" || page == "quick_prompts" -> page = settingsReturnPage
             page != "main" -> page = "main"
             fullscreen -> fullscreen = false
             else -> onClose()
@@ -140,10 +143,10 @@ internal fun ExplainScreen(
                     if (page == "song_history") "返回歌曲列表" else if (page == "main" && readingHistory) "返回歌曲记录" else "返回解读",
                     R.drawable.keyboard_arrow_right_24px, onClick = ::back, modifier = Modifier.rotate(180f))
                 Text(when (page) { "history" -> "历史与收藏"; "settings" -> "阅读设置"; "share" -> "分享卡片";
-                    "quick_prompts" -> "快捷追问设置";
+                    "quick_prompts" -> "快捷追问";
                     "album" -> "专辑解读";
                     "song_history" -> "歌曲记录"; "lines" -> "选择歌词"; else -> "音乐解读" },
-                    modifier = Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    modifier = Modifier.weight(1f), color = colors.onSurface, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                 IconAction(if (fullscreen) "收起为弹层" else "全屏阅读", R.drawable.explain_expand,
                     onClick = { fullscreen = !fullscreen })
                 IconAction("历史与收藏", R.drawable.explain_history, onClick = { page = "history" })
@@ -152,8 +155,8 @@ internal fun ExplainScreen(
                     WindowCascadingListPopup(
                         show = menu,
                         entries = listOf(DropdownEntry(items = listOf(
-                            DropdownItem(text = "阅读设置", onClick = { menu = false; page = "settings" }),
-                            DropdownItem(text = "快捷追问设置", onClick = { menu = false; page = "quick_prompts" }),
+                            DropdownItem(text = "阅读设置", onClick = { menu = false; settingsReturnPage = if (page == "album") "album" else "main"; page = "settings" }),
+                            DropdownItem(text = "快捷追问", onClick = { menu = false; settingsReturnPage = if (page == "album") "album" else "main"; page = "quick_prompts" }),
                             DropdownItem(text = "专辑解读", enabled = album != null, onClick = { menu = false; album?.seed(state.record.song); page = "album"; fullscreen = true }),
                             DropdownItem(text = "复制全文", enabled = state.record.turns.any { it.content.isNotBlank() }, onClick = {
                                 menu = false
@@ -165,6 +168,7 @@ internal fun ExplainScreen(
                                     toast("已复制到剪贴板")
                                 }
                             }),
+                            DropdownItem(text = "解读信息", onClick = { menu = false; showInfo = true }),
                             DropdownItem(text = "关闭解读", onClick = { menu = false; onClose() })
                         ))), onDismissRequest = { menu = false }, alignment = PopupPositionProvider.Align.End
                     )
@@ -185,9 +189,16 @@ internal fun ExplainScreen(
                 "lines" -> LyricPicker(state, Modifier.weight(1f)) { state.selectLine(it); page = "main" }
                 else -> ExplainMain(state, listState, Modifier.weight(1f),
                     onPick = { page = "lines" }, onShare = { page = "share" },
-                    onAlbum = { album?.seed(state.record.song); page = "album"; fullscreen = true }, albumAvailable = album != null,
-                    onEditQuickPrompts = { page = "quick_prompts" })
+                    onEditQuickPrompts = { settingsReturnPage = "main"; page = "quick_prompts" })
             } }
+        }
+    }
+    if (showInfo) WindowDialog(show = true, title = "解读信息", onDismissRequest = { showInfo = false }) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(state.sourceLabel)
+            SmallText(recordTime(state.generatedAt()))
+            SmallText("AI 解读仅供参考")
+            Action("知道了", { showInfo = false })
         }
     }
     if (pendingDeletion.isNotEmpty()) WindowDialog(
@@ -213,8 +224,6 @@ private fun ExplainMain(
     modifier: Modifier,
     onPick: () -> Unit,
     onShare: () -> Unit,
-    onAlbum: () -> Unit,
-    albumAvailable: Boolean,
     onEditQuickPrompts: () -> Unit
 ) {
     val colors = MiuixTheme.colorScheme
@@ -247,35 +256,26 @@ private fun ExplainMain(
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 item("song") { SongHeader(state.record.song) }
-                if (albumAvailable) item("album-entry") { Action("专辑解读 · 逐首看歌词与编曲 ›", onAlbum, filled = true) }
                 item("scope") {
-                    Segments(ExplainRange.entries.map { it.label }, state.record.range.ordinal,
-                        enabled = state.record.song.lines.isNotEmpty()) { state.setRange(ExplainRange.entries[it]) }
-                }
-                item("angle") {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween) {
-                        SmallText("解读角度")
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.weight(1f)) {
+                            Segments(ExplainRange.entries.map { it.label }, state.record.range.ordinal,
+                                enabled = state.record.song.lines.isNotEmpty()) { state.setRange(ExplainRange.entries[it]) }
+                        }
                         ChoiceMenu(state.record.angle.label, anglesFor(state.record.range).map { it.label }) {
                             state.setAngle(anglesFor(state.record.range)[it])
                         }
                     }
                 }
                 item("quote") {
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                        .background(colors.primary.copy(alpha = .08f)).padding(14.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (state.record.range == ExplainRange.LINE) {
-                                val time = state.selectedLine?.start ?: -1
-                                "选中歌词" + if (time >= 0) " · ${lyricTime(time)}" else ""
-                            } else "整首歌词 · ${state.record.song.lines.size} 行",
-                                fontSize = 12.sp, color = colors.primary)
-                            Action(if (state.record.range == ExplainRange.LINE) "换一句 ›" else "查看歌词 ›", onPick, small = true)
-                        }
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                        .background(colors.primary.copy(alpha = .08f)).padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(if (state.record.range == ExplainRange.LINE) state.selectedLine?.text.orEmpty()
                             else state.record.song.lines.take(2).joinToString("\n") { it.text },
-                            fontSize = 16.sp, lineHeight = 26.sp, modifier = Modifier.padding(top = 4.dp))
+                            fontSize = 16.sp, lineHeight = 26.sp, modifier = Modifier.weight(1f))
+                        Action(if (state.record.range == ExplainRange.LINE) "换句" else "歌词", onPick, small = true)
                     }
                 }
                 items(state.record.turns, key = { "turn-${it.id}" }) { turn ->
@@ -291,9 +291,7 @@ private fun ExplainMain(
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween) {
-                        SmallText(if (state.sourceLabel in listOf("历史结果", "历史解读"))
-                            "${state.sourceLabel} · ${recordTime(state.generatedAt())}" else state.sourceLabel,
-                            Modifier.weight(1f))
+                        Spacer(Modifier.weight(1f))
                         if (state.isLoading) Action("停止生成", state::stop, small = true)
                         else Row {
                             Action(if (state.record.favorite) "已收藏" else "收藏", state::toggleFavorite,
@@ -306,14 +304,11 @@ private fun ExplainMain(
                 }
                 item("suggestions") {
                     if (canAsk) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            SmallText("继续聊聊这首歌", Modifier.weight(1f))
-                            Action("自定义", onEditQuickPrompts, small = true)
-                        }
                         val prompts = state.quickPrompts[quickPromptGroup(state.record.range, state.record.angle)].orEmpty()
                         FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             prompts.forEach { text -> Action(text, { send(text) }, small = true, filled = true) }
+                            IconAction("编辑快捷追问", R.drawable.description_24px, onEditQuickPrompts)
                         }
                     }
                 }
@@ -333,14 +328,12 @@ private fun ExplainMain(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { send(question) }),
                     decorationBox = { inner ->
-                        Box { if (question.isEmpty()) SmallText("关于这首歌，还想了解什么？"); inner() }
+                        Box { if (question.isEmpty()) SmallText("继续追问…"); inner() }
                     })
                 if (state.isLoading) Action("停止", state::stop, active = true)
                 else IconAction("发送追问", R.drawable.explain_send, { send(question) },
                     enabled = canAsk && question.isNotBlank(), accent = true)
             }
-            Text("AI 解读仅供参考", color = colors.onSurfaceVariantSummary, fontSize = 11.sp,
-                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 7.dp))
         }
     }
 }
@@ -355,8 +348,7 @@ private fun QuickPromptsPage(state: ExplainViewModel, modifier: Modifier) {
     Column(modifier.padding(horizontal = 20.dp)) {
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween) {
-            SmallText("分别设置不同场景的快捷问题")
-            ChoiceMenu(group.label, QuickPromptGroup.entries.map { it.label }) {
+            Segments(listOf("这一句", "整首歌", "外语"), group.ordinal) {
                 category = QuickPromptGroup.entries[it].name
             }
         }
@@ -376,11 +368,10 @@ private fun QuickPromptEditor(state: ExplainViewModel, group: QuickPromptGroup, 
         if (saved != appliedSaved) { values = saved; appliedSaved = saved }
     }
     Column(modifier) {
-        SmallText("最多 ${ExplainQuickPrompts.MAX_COUNT} 条，每条最多 ${ExplainQuickPrompts.MAX_LENGTH} 字。空白项和重复项会在保存时移除。",
-            Modifier.padding(vertical = 8.dp))
+        SmallText("${values.size}/${ExplainQuickPrompts.MAX_COUNT}", Modifier.padding(vertical = 8.dp))
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (values.isEmpty()) item { SmallText("这一组暂不显示快捷问题，仍可在输入框中自由追问。") }
+            if (values.isEmpty()) item { SmallText("暂无快捷问题") }
             itemsIndexed(values) { index, text ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     InputBox(text, { newText ->
@@ -394,7 +385,7 @@ private fun QuickPromptEditor(state: ExplainViewModel, group: QuickPromptGroup, 
                 }
             }
             item {
-                Action("新增快捷问题", { values = values + "" },
+                Action("新增问题", { values = values + "" },
                     enabled = values.size < ExplainQuickPrompts.MAX_COUNT && !state.savingQuickPrompts,
                     filled = true, modifier = Modifier.fillMaxWidth())
             }
@@ -405,7 +396,7 @@ private fun QuickPromptEditor(state: ExplainViewModel, group: QuickPromptGroup, 
                 values = defaultQuickPrompts(group)
                 state.saveQuickPrompts(group, values, reset = true)
             }, enabled = !state.savingQuickPrompts, filled = true, modifier = Modifier.weight(1f))
-            Action(if (state.savingQuickPrompts) "保存中…" else "保存快捷问题", {
+            Action(if (state.savingQuickPrompts) "保存中…" else "保存", {
                 keyboard?.hide()
                 values = cleanQuickPrompts(values)
                 state.saveQuickPrompts(group, values)
@@ -434,7 +425,8 @@ private fun SongHeader(song: ExplainSong) {
 }
 
 @Composable
-internal fun TurnView(turn: ExplainTurn, fontSize: Int, spacing: Int, showReasoning: Boolean) {
+internal fun TurnView(turn: ExplainTurn, fontSize: Int, spacing: Int, showReasoning: Boolean,
+    bodyContent: (@Composable () -> Unit)? = null) {
     var expanded by rememberSaveable(turn.id) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (turn.question.isNotBlank()) Box(Modifier.fillMaxWidth().padding(start = 32.dp), contentAlignment = Alignment.CenterEnd) {
@@ -453,22 +445,16 @@ internal fun TurnView(turn: ExplainTurn, fontSize: Int, spacing: Int, showReason
                 if (expanded) ExplainMarkdown(turn.reasoning, fontSize - 1, spacing)
             }
         }
-        if (turn.content.isNotEmpty()) SelectionContainer { ExplainMarkdown(turn.content, fontSize, spacing) }
+        if (turn.content.isNotEmpty()) SelectionContainer {
+            if (bodyContent != null) bodyContent() else ExplainMarkdown(turn.content, fontSize, spacing)
+        }
         else if (turn.status == ExplainStatus.GENERATING) SmallText("正在解读，请稍候…")
         if (turn.status == ExplainStatus.STOPPED) SmallText("已停止生成")
     }
 }
 
 @Composable
-private fun ExplainMarkdown(content: String, size: Int, spacing: Int) {
-    val markdown = rememberStreamingMarkdownState()
-    var rendered by remember { mutableIntStateOf(0) }
-    LaunchedEffect(content) {
-        if (content.length > rendered) {
-            markdown.append(content.substring(rendered))
-            rendered = content.length
-        }
-    }
+internal fun ExplainMarkdown(content: String, size: Int, spacing: Int, streaming: Boolean = true) {
     val colors = MiuixTheme.colorScheme
     val typography = remember(size, spacing, colors.primary) {
         val text = TextStyle(fontSize = size.sp, lineHeight = (size * spacing / 10f).sp)
@@ -482,10 +468,25 @@ private fun ExplainMarkdown(content: String, size: Int, spacing: Int) {
             table = text, alertTitle = text.copy(fontWeight = FontWeight.Bold),
             textLink = TextLinkStyles(SpanStyle(color = colors.primary)))
     }
-    Markdown(streamingMarkdownState = markdown, modifier = Modifier.fillMaxWidth(),
-        colors = DefaultMarkdownColors(text = colors.onSurface, codeBackground = colors.surfaceContainer,
+    val markdownColors = DefaultMarkdownColors(text = colors.onSurface, codeBackground = colors.surfaceContainer,
             inlineCodeBackground = colors.surfaceContainer, dividerColor = colors.onSurfaceVariantSummary,
-            tableBackground = colors.surfaceContainer), typography = typography, padding = markdownPadding(block = 8.dp))
+            tableBackground = colors.surfaceContainer)
+    if (streaming) {
+        val markdown = rememberStreamingMarkdownState()
+        var rendered by remember { mutableIntStateOf(0) }
+        LaunchedEffect(content) {
+            if (content.length > rendered) {
+                markdown.append(content.substring(rendered))
+                rendered = content.length
+            }
+        }
+        Markdown(streamingMarkdownState = markdown, modifier = Modifier.fillMaxWidth(),
+            colors = markdownColors, typography = typography, padding = markdownPadding(block = 8.dp))
+    } else {
+        // A section can be replaced or regrouped as headings arrive during a stream.
+        Markdown(content = content, modifier = Modifier.fillMaxWidth(), colors = markdownColors,
+            typography = typography, padding = markdownPadding(block = 8.dp))
+    }
 }
 
 @Composable
@@ -501,25 +502,22 @@ private fun HistoryPage(
         }
     }
     Column(modifier.padding(horizontal = 20.dp)) {
-        InputBox(query, { query = it }, "搜索歌曲、歌手", Modifier.padding(vertical = 10.dp), singleLine = true)
-        Segments(listOf("全部记录", "我的收藏"), if (favorites) 1 else 0) { favorites = it == 1 }
+        InputBox(query, { query = it }, "歌名 / 歌手", Modifier.padding(vertical = 10.dp), singleLine = true)
+        Segments(listOf("全部", "收藏"), if (favorites) 1 else 0) { favorites = it == 1 }
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (filtered.isEmpty()) item { SmallText(if (favorites) "暂无收藏的解读" else "暂无符合条件的解读记录") }
+            if (filtered.isEmpty()) item { SmallText(if (favorites) "暂无收藏的解读" else "暂无解读记录") }
             items(filtered, key = { it.key }) { song ->
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
                     .background(MiuixTheme.colorScheme.surfaceContainer).clickable { onOpen(song.key, favorites) }.padding(14.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.weight(1f)) { SongHeader(song.song) }
+                        Box(Modifier.weight(1f)) { SongHeader(song.song.copy(album = "")) }
                         IconAction("删除这首歌的全部记录", R.drawable.explain_delete, { onDelete(song) }, enabled = !state.deleting)
                         Icon(painterResource(R.drawable.keyboard_arrow_right_24px), null,
                             Modifier.size(20.dp), tint = MiuixTheme.colorScheme.onSurfaceVariantSummary)
                     }
-                    val count = if (favorites) "${song.records.size} 条收藏" else "${song.records.size} 条解读"
-                    val saved = song.records.count { it.favorite }
-                    SmallText(count + if (!favorites && saved > 0) " · $saved 条收藏" else "",
-                        Modifier.padding(top = 12.dp))
-                    SmallText("最近更新 · ${recordTime(song.records.first().updatedAt)}", Modifier.padding(top = 4.dp))
+                    SmallText("${song.records.size} 条 · ${recordTime(song.records.first().updatedAt)}",
+                        Modifier.padding(top = 8.dp))
                 }
             }
         }
@@ -541,7 +539,7 @@ private fun SongHistoryPage(
         else {
             item("song") { SongHeader(group.song) }
             item("delete") { Action("删除这首歌的全部记录", { onDeleteSong(group) }, enabled = !state.deleting, small = true) }
-            item("count") { SmallText("${if (favoritesOnly) "收藏版本" else "全部版本"} · ${group.records.size} 条 · 按最近更新时间排列") }
+            item("count") { SmallText("${if (favoritesOnly) "收藏版本" else "全部版本"} · ${group.records.size} 条") }
             items(group.records, key = { it.id }) { record ->
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
                     .background(MiuixTheme.colorScheme.surfaceContainer).clickable { onOpen(record) }.padding(14.dp)) {
@@ -575,9 +573,9 @@ private fun SongHistoryPage(
 private fun LyricPicker(state: ExplainViewModel, modifier: Modifier, onPick: (Int) -> Unit) {
     val list = rememberLazyListState(initialFirstVisibleItemIndex = state.record.lineIndex.coerceAtLeast(0))
     Column(modifier.padding(horizontal = 20.dp)) {
-        if (state.canRefresh) Action(if (state.refreshing) "正在获取…" else "更新为正在播放的这一句", state::refreshCurrentLine,
+        if (state.canRefresh) Action(if (state.refreshing) "正在获取…" else "正在唱的这一句", state::refreshCurrentLine,
             enabled = !state.refreshing, filled = true, modifier = Modifier.fillMaxWidth())
-        SmallText("播放继续时不会自动更换解读对象", Modifier.padding(vertical = 10.dp))
+        Spacer(Modifier.height(10.dp))
         LazyColumn(state = list, modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             itemsIndexed(state.record.song.lines) { index, line ->
@@ -598,7 +596,7 @@ private fun ReadingPage(state: ExplainViewModel, modifier: Modifier) {
         contentPadding = PaddingValues(vertical = 12.dp)) {
         item {
             SettingCard {
-                Text("正文字号 · ${state.fontSize} sp")
+                Text("字号 · ${state.fontSize}")
                 ReadingSlider(state.fontSize.toFloat(), 14f..22f, 7) { state.setReading(size = it.toInt()) }
             }
         }
@@ -611,7 +609,7 @@ private fun ReadingPage(state: ExplainViewModel, modifier: Modifier) {
         item {
             SettingCard {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("显示解读思路入口", modifier = Modifier.weight(1f))
+                    Text("显示思路", modifier = Modifier.weight(1f))
                     Switch(checked = state.showReasoning, onCheckedChange = { state.setReading(reasoning = it) },
                         colors = SwitchDefaults.colors(checkedThumbColor = MiuixTheme.colorScheme.onPrimary,
                             checkedTrackColor = MiuixTheme.colorScheme.primary, checkedBorderColor = Color.Transparent,
@@ -622,7 +620,7 @@ private fun ReadingPage(state: ExplainViewModel, modifier: Modifier) {
             }
         }
         item {
-            SmallText("阅读预览 · 设置自动保存", Modifier.padding(bottom = 8.dp))
+            SmallText("预览", Modifier.padding(bottom = 8.dp))
             SettingCard {
                 Text(state.selectedLine?.text ?: "每一句歌词，都有自己的情绪与故事。",
                     fontSize = state.fontSize.sp, lineHeight = (state.fontSize * state.lineSpacing / 10f).sp)
@@ -654,7 +652,13 @@ private fun SharePage(record: ExplainRecord, modifier: Modifier) {
     var exporting by remember { mutableStateOf(false) }
     LazyColumn(modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
-        item { Text("选择歌词", fontWeight = FontWeight.Medium) }
+        item {
+            if (preview != null) Image(preview!!.asImageBitmap(), "歌词解读分享卡预览",
+                modifier = Modifier.fillMaxWidth().height(280.dp).clip(RoundedCornerShape(16.dp)),
+                contentScale = ContentScale.Fit)
+            else SmallText(if (previewError) "预览生成失败，请调整摘录后重试" else "正在生成分享卡…")
+        }
+        item { Text("歌词", fontWeight = FontWeight.Medium) }
         item {
             ChoiceMenu(if (quote.isBlank()) "选择一句歌词" else quote,
                 record.song.lines.map { it.text }, modifier = Modifier.fillMaxWidth()) { quoteIndex = it }
@@ -666,15 +670,9 @@ private fun SharePage(record: ExplainRecord, modifier: Modifier) {
                 excerpt = ExplainShareCard.plainText(answers[it].content).take(600)
             }
         }
-        item { Text("解读摘录", fontWeight = FontWeight.Medium) }
+        item { Text("摘录", fontWeight = FontWeight.Medium) }
         item { InputBox(excerpt, { excerpt = it.take(1800) }, "输入或粘贴想分享的解读片段", minLines = 3) }
-        item { SmallText("${excerpt.length}/1800 · 可编辑摘录") }
-        item {
-            if (preview != null) Image(preview!!.asImageBitmap(), "歌词解读分享卡预览",
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                    .aspectRatio(preview!!.width.toFloat() / preview!!.height), contentScale = ContentScale.FillWidth)
-            else SmallText(if (previewError) "预览生成失败，请调整摘录后重试" else "正在生成分享卡…")
-        }
+        if (excerpt.length >= 1500) item { SmallText("${excerpt.length}/1800") }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Action(if (exporting) "处理中…" else "保存图片", {
@@ -687,7 +685,7 @@ private fun SharePage(record: ExplainRecord, modifier: Modifier) {
                     }
                 }, enabled = preview != null && excerpt.isNotBlank() && !exporting, active = true,
                     modifier = Modifier.weight(1f))
-                Action("系统分享", {
+                Action("分享", {
                     val image = preview ?: return@Action
                     exporting = true
                     scope.launch {
@@ -703,7 +701,7 @@ private fun SharePage(record: ExplainRecord, modifier: Modifier) {
 }
 
 @Composable
-private fun Segments(labels: List<String>, selected: Int, enabled: Boolean = true, onSelect: (Int) -> Unit) {
+internal fun Segments(labels: List<String>, selected: Int, enabled: Boolean = true, onSelect: (Int) -> Unit) {
     val colors = MiuixTheme.colorScheme
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surfaceContainer).padding(4.dp)) {
         labels.forEachIndexed { index, label ->

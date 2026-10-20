@@ -8,6 +8,7 @@ package io.github.proify.lyricon.lyric.view.line
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Rect
 import android.text.TextPaint
 import android.util.AttributeSet
 import android.view.View
@@ -28,6 +29,7 @@ import io.github.proify.lyricon.lyric.view.line.model.LyricModel
 import io.github.proify.lyricon.lyric.view.line.model.createModel
 import io.github.proify.lyricon.lyric.view.line.model.emptyLyricModel
 import io.github.proify.lyricon.lyric.view.sp
+import kotlin.math.ceil
 
 open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
     View(context, attrs), UpdatableColor {
@@ -38,6 +40,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
     }
 
     val textPaint: TextPaint = TextPaintX().apply { textSize = 24f.sp }
+    private val glyphBounds = Rect()
 
     val model: LyricModel get() = _model
     private var _model: LyricModel = emptyLyricModel()
@@ -106,18 +109,21 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         get() = effectEngine.effectList
         set(value) {
             effectEngine.setEffects(value)
+            requestLayout()
             invalidate()
         }
 
     /** 追加一个特效（按注册顺序叠加到当前特效链之后）。 */
     fun addEffect(effect: LyricUnitEffect) {
         effectEngine.add(effect)
+        requestLayout()
         invalidate()
     }
 
     /** 按名称移除特效（例如移除默认的 [WaveLiftEffect] 的 "wave_lift" 或 [EmphasizeGlowEffect] 的 "emphasize_glow"）。 */
     fun removeEffect(name: String) {
         effectEngine.remove(name)
+        requestLayout()
         invalidate()
     }
 
@@ -228,6 +234,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         }
 
         refreshSizes()
+        requestLayout()
         animator.stop()
         animator.startIfNeeded()
         invalidate()
@@ -346,20 +353,19 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
 
     override fun onMeasure(wSpec: Int, hSpec: Int) {
         val w = MeasureSpec.getSize(wSpec)
-        // 仅逐词同步行（非普通文字、非纯滚动）实际渲染逐字特效，才需要预留动画高度；
-        // 普通文字行无单词数据、无特效，预留会使其行高变大造成不必要的初始偏移。
-//        val charMotionPadding = if (isWordCharMotionEnabled && isWordSync && !isScrollOnly) {
-//            val maxLift = maxOf(wordMotion.cjkLiftFactor, wordMotion.latinLiftFactor)
-//            val textHeight = textPaint.descent() - textPaint.ascent()
-//            // WaveLift 上浮 + 强调上浮 + 强调缩放（1.12 上限）的对称溢出：
-//            // 为逐字动画预留高度，空间充足时动画完整展示；高度被外部压缩时
-//            // 由 TextDrawer 的 strength 机制按比例收缩动画幅度。
-//            ceil(textPaint.textSize * (maxLift + EMPHASIS_LIFT_EM) + textHeight * SCALE_OVERFLOW_FRACTION).toInt()
-//        } else {
-//            0
-//        }
-        val charMotionPadding = 0
-        val textHeight = (textPaint.descent() - textPaint.ascent()).toInt() + charMotionPadding
+        val fm = textPaint.fontMetrics
+        val text = if (isWordSync) _model.wordText else _model.text
+        if (text.isNotEmpty()) textPaint.getTextBounds(text, 0, text.length, glyphBounds)
+        val top = if (text.isNotEmpty()) glyphBounds.top.toFloat() else fm.ascent
+        val bottom = if (text.isNotEmpty()) glyphBounds.bottom.toFloat() else fm.descent
+        val natural = VerticalTextSpace.naturalHalfHeight(top, fm.ascent, fm.descent, bottom)
+        val motion = if (isWordCharMotionEnabled && isWordSync && !isScrollOnly) {
+            VerticalTextSpace.motionHalfHeight(top, bottom, textPaint.textSize,
+                effectEngine.maximumWaveLift, effectEngine.hasEmphasis)
+        } else 0f
+        // Reserve both sides of the centered baseline. Fixed-height parents instead reduce
+        // the animation strength using the same bounds, without cutting off the glyphs.
+        val textHeight = ceil(2f * (natural + motion)).toInt()
         setMeasuredDimension(w, resolveSize(textHeight, hSpec))
     }
 

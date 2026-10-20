@@ -7,4 +7,6 @@ oneway interface IAiChatService {
     void complete(String requestId, in AiConfig config, String systemPrompt,
                   String userPrompt, boolean jsonObject, IAiChatCallback callback);
     void cancel(String requestId);
+    void translateGoogle(String requestId, String targetLanguage, String baseUrl,
+                         String textsJson, IAiChatCallback callback);
 }

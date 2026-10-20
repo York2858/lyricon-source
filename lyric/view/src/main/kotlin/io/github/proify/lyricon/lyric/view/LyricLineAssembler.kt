@@ -17,6 +17,7 @@ internal class LyricLineAssembler(
     private var enableRelativeHighlight: Boolean = false,
 ) {
     private val wordBuilder = RelativeWordBuilder()
+    var layout: AuxiliaryLineLayout = AuxiliaryLineLayout.TRANSLATION_FIRST
 
     fun updateFlags(displayTranslation: Boolean, displayRoma: Boolean,
                     enableRelativeProgress: Boolean, enableRelativeHighlight: Boolean) {
@@ -55,24 +56,29 @@ internal class LyricLineAssembler(
             begin = source.begin; end = source.end; duration = source.duration
             isAlignedRight = source.isAlignedRight
 
+            val hasTranslation = displayTranslation && (!source.translation.isNullOrBlank()
+                || !source.translationWords.isNullOrEmpty())
+            val hasRoma = displayRoma && !source.roma.isNullOrBlank()
             when {
-                !source.secondary.isNullOrBlank() || !source.secondaryWords.isNullOrEmpty() -> {
-                    text = source.secondary
-                    words = wordBuilder.build(source, source.secondary, source.secondaryWords)
-                    generated = words !== source.secondaryWords
+                hasRoma && (layout != AuxiliaryLineLayout.TRANSLATION_FIRST || !hasTranslation) -> {
+                    text = source.roma
+                    val timedRoma = source.secondaryWords?.takeIf {
+                        source.secondary?.trim() == source.roma?.trim()
+                    }
+                    words = wordBuilder.build(source, source.roma, timedRoma)
+                    metadata = lyricMetadataOf("roma" to "true")
+                    generated = true
                 }
-                displayTranslation && (!source.translation.isNullOrBlank()
-                        || !source.translationWords.isNullOrEmpty()) -> {
+                hasTranslation -> {
                     text = source.translation
                     words = wordBuilder.build(source, source.translation, source.translationWords)
                     metadata = lyricMetadataOf("translation" to "true")
                     generated = words !== source.translationWords
                 }
-                displayRoma -> {
-                    text = source.roma
-                    words = wordBuilder.build(source, source.roma, null)
-                    metadata = lyricMetadataOf("roma" to "true")
-                    generated = true
+                !source.secondary.isNullOrBlank() || !source.secondaryWords.isNullOrEmpty() -> {
+                    text = source.secondary
+                    words = wordBuilder.build(source, source.secondary, source.secondaryWords)
+                    generated = words !== source.secondaryWords
                 }
             }
         }
@@ -85,25 +91,23 @@ internal class LyricLineAssembler(
                         || line.words?.firstOrNull()?.begin?.let { (it - source.begin) < 500 } == true
                 )
 
-        return SecondaryResult(line, alwaysShow, generated && !enableRelativeHighlight)
+        val auxiliary = line.metadata?.getBoolean("translation") == true || line.metadata?.getBoolean("roma") == true
+        // Both auxiliary roles share the translation color/highlight/motion renderer.
+        // A plain secondary caption retains the existing scroll-only policy.
+        return SecondaryResult(line, alwaysShow, !auxiliary && generated && !enableRelativeHighlight)
     }
 
     data class TertiaryResult(val line: LyricLine, val alwaysShow: Boolean)
 
     /**
-     * 第三行：仅当副行已被「翻译」占用、且开启罗马音时，
-     * 把罗马音放到第三行与翻译同时展示。
+     * 悬浮窗同时具备罗马音和翻译时，罗马音占副行、翻译占第三行。
      */
     fun buildTertiary(source: IRichLyricLine?): TertiaryResult {
         if (source == null) return TertiaryResult(LyricLine(), false)
-        if (!displayRoma) return TertiaryResult(LyricLine(), false)
-
-        // 副行优先展示行内 secondary；此处仅在 secondary 为空、翻译占用了副行时补位
-        val secondaryTakenByPlainText =
-            !source.secondary.isNullOrBlank() || !source.secondaryWords.isNullOrEmpty()
+        if (layout != AuxiliaryLineLayout.ROMA_THEN_TRANSLATION || !displayRoma) return TertiaryResult(LyricLine(), false)
         val translationAvailable = displayTranslation &&
                 (!source.translation.isNullOrBlank() || !source.translationWords.isNullOrEmpty())
-        if (secondaryTakenByPlainText || !translationAvailable) {
+        if (!translationAvailable) {
             return TertiaryResult(LyricLine(), false)
         }
 
@@ -115,9 +119,9 @@ internal class LyricLineAssembler(
             end = source.end
             duration = source.duration
             isAlignedRight = source.isAlignedRight
-            text = roma
-            words = wordBuilder.build(source, roma, null)
-            metadata = lyricMetadataOf("roma" to "true")
+            text = source.translation
+            words = wordBuilder.build(source, source.translation, source.translationWords)
+            metadata = lyricMetadataOf("translation" to "true")
         }
         return TertiaryResult(line, true)
     }

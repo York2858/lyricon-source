@@ -103,7 +103,7 @@ internal class WordSyncRenderer(private val view: LyricLineView) : LineRenderer 
     }
 
     fun updateLayout(model: LyricModel, state: LineState, viewWidth: Int, viewHeight: Int) {
-        textDrawer.updateMetrics(bgPaint)
+        textDrawer.updateMetrics(bgPaint, model)
         if (progressAnimator.hasFinished) {
             progressAnimator.jumpTo(model.width)
         }

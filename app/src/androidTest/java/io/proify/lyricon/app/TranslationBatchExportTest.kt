@@ -87,7 +87,7 @@ class TranslationBatchExportTest {
     private class BatchLibrary : TranslationLibraryRepository {
         val songs = listOf("a", "b").map { TranslationSongEntry(it, "song $it", "artist", 2, 2, 0, 1, "中文") }
         override suspend fun list(query: TranslationLibraryQuery) = TranslationLibraryPage(songs, false, 2, 4, 4, 0, listOf("中文"))
-        override suspend fun versions(group: String, offset: Int) = TranslationVersionPage(listOf(
+        override suspend fun versions(group: String, offset: Int, status: String) = TranslationVersionPage(listOf(
             TranslationVersion(group, "song $group", "artist", "中文", "fixture", 2, 2, false, true, true),
             TranslationVersion("old", "old", "artist", "中文", "fixture", 1, 2, false, true, true)), false)
         override suspend fun lines(id: String, offset: Int): TranslationLinePage {
@@ -98,6 +98,6 @@ class TranslationBatchExportTest {
         }
         override suspend fun musicLocation(id: String) = TranslationMusicLocation(audioFileName = "01. 同名.flac")
         override suspend fun favorite(id: String, value: Boolean) {}
-        override suspend fun delete(ids: List<String>, groups: List<String>) = 0
+        override suspend fun delete(ids: List<String>, groups: List<String>, status: String) = 0
     }
 }

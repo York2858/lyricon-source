@@ -32,7 +32,7 @@ internal class WaveLiftEffect : LyricUnitEffect {
     var latinWaveFactor = WordMotion().latinWaveFactor
 
     override fun apply(unit: DrawUnit, param: EffectParam, out: UnitTransform) {
-        val lift = if (unit.isCjk) cjkLiftFactor else latinLiftFactor
+        val lift = (if (unit.isCjk) cjkLiftFactor else latinLiftFactor) * param.strength
 
         val duration = max(1000L, unit.endMs - unit.beginMs)
         val elapsed = param.currentTimeMs - unit.beginMs

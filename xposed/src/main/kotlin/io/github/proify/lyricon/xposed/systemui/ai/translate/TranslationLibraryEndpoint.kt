@@ -24,10 +24,10 @@ internal class TranslationLibraryEndpoint(private val context: Context, cache: A
                     val json = TranslationLibraryContract.json
                     val encoded = when (what) {
                         TranslationLibraryContract.LIST -> json.encodeToString(store.list(json.decodeFromString<TranslationLibraryQuery>(request.getString("query") ?: "{}")))
-                        TranslationLibraryContract.VERSIONS -> json.encodeToString(store.versions(request.getString("group").orEmpty(), request.getInt("offset")))
+                        TranslationLibraryContract.VERSIONS -> json.encodeToString(store.versions(request.getString("group").orEmpty(), request.getInt("offset"), request.getString("status").orEmpty()))
                         TranslationLibraryContract.LINES -> json.encodeToString(store.lines(request.getString("id").orEmpty(), request.getInt("offset")))
                         TranslationLibraryContract.FAVORITE -> { check(store.favorite(request.getString("id").orEmpty(), request.getBoolean("favorite")) > 0) { "记录已不存在" }; "ok" }
-                        TranslationLibraryContract.DELETE -> store.delete(request.getStringArrayList("ids").orEmpty(), request.getStringArrayList("groups").orEmpty()).toString()
+                        TranslationLibraryContract.DELETE -> store.delete(request.getStringArrayList("ids").orEmpty(), request.getStringArrayList("groups").orEmpty(), request.getString("status").orEmpty()).toString()
                         TranslationLibraryContract.MUSIC_LOCATION -> {
                             val (title, artist) = store.songIdentity(request.getString("id").orEmpty())
                             json.encodeToString(TranslationMusicLocator.locate(context, title, artist))

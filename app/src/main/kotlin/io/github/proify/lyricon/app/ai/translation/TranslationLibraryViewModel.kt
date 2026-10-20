@@ -11,7 +11,7 @@ import kotlinx.coroutines.*
 internal class TranslationLibraryViewModel @JvmOverloads constructor(application: Application,
     private val repository: TranslationLibraryRepository = SystemTranslationLibrary(application)
 ) : AndroidViewModel(application) {
-    var query by mutableStateOf(TranslationLibraryQuery()); private set
+    var query by mutableStateOf(TranslationLibraryQuery(status = "translated")); private set
     var page by mutableStateOf<TranslationLibraryPage?>(null); private set
     var songs by mutableStateOf(emptyList<TranslationSongEntry>()); private set
     var group by mutableStateOf<TranslationSongEntry?>(null); private set
@@ -77,7 +77,24 @@ internal class TranslationLibraryViewModel @JvmOverloads constructor(application
         }
     }
     fun refresh() = load {
-        when { version != null -> loadLines(false); group != null -> loadVersions(false); else -> loadSongs(false) }
+        when {
+            version != null && version?.status != "translated" -> refreshOutcome()
+            version != null -> loadLines(false)
+            group != null -> loadVersions(false)
+            else -> loadSongs(false)
+        }
+    }
+    private suspend fun refreshOutcome() {
+        val id = checkNotNull(version).id
+        var offset = 0
+        do {
+            val result = repository.versions(checkNotNull(group).key, offset, query.status)
+            result.versions.firstOrNull { it.id == id }?.let { version = it; return }
+            if (!result.hasMore) break
+            check(result.versions.isNotEmpty()) { "读取进度异常，请重试" }
+            offset += result.versions.size
+        } while (true)
+        error("这条记录已被删除，请返回刷新列表")
     }
     fun more() = load {
         when { version != null -> loadLines(true); group != null -> loadVersions(true); else -> loadSongs(true) }
@@ -93,7 +110,7 @@ internal class TranslationLibraryViewModel @JvmOverloads constructor(application
         load { loadVersions(false) }
     }
     private suspend fun loadVersions(append: Boolean) {
-        val result = repository.versions(checkNotNull(group).key, if (append) versions.size else 0)
+        val result = repository.versions(checkNotNull(group).key, if (append) versions.size else 0, query.status)
         versions = (if (append) versions + result.versions else result.versions).distinctBy { it.id }
         moreVersions = result.hasMore
     }
@@ -146,7 +163,7 @@ internal class TranslationLibraryViewModel @JvmOverloads constructor(application
     fun delete(ids: List<String>, groups: List<String>) = mutate {
         val affectedGroup = group?.key
         val removed = versions.filter { it.id in ids }
-        val count = repository.delete(ids, groups)
+        val count = repository.delete(ids, groups, query.status)
         job?.cancel(); revision++; loading = false
         if (groups.isNotEmpty()) {
             if (group?.key in groups) { group = null; version = null }
@@ -157,7 +174,7 @@ internal class TranslationLibraryViewModel @JvmOverloads constructor(application
             versions = (song.versions - count).coerceAtLeast(0),
             lines = (song.lines - removed.sumOf { it.lineCount }).coerceAtLeast(0),
             favorites = (song.favorites - removed.count { it.favorite }).coerceAtLeast(0)) }
-        notice = "已删除 $count 条翻译记录"
+        notice = "已删除 $count 条记录"
         refresh()
     }
     private suspend fun fullLines(value: TranslationVersion): List<TranslationLine> {

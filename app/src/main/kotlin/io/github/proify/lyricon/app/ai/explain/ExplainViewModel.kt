@@ -66,6 +66,8 @@ class ExplainViewModel(
     var savingQuickPrompts by mutableStateOf(false)
         private set
     private var requestJob: Job? = null
+    private var selectionJob: Job? = null
+    private var startupPending = true
     private var refreshJob: Job? = null
     private var sourceTime = System.currentTimeMillis()
 
@@ -90,9 +92,9 @@ class ExplainViewModel(
 
     private val initialIndex = ExplainLyricSelection.currentIndex(
         initialSong.lines.map { it.start }, initialSong.lines.map { it.end }, initialPosition)
-    var record by mutableStateOf(newRecord(initialSong,
-        if (initialIndex >= 0) ExplainRange.LINE else ExplainRange.SONG,
-        if (initialIndex >= 0) ExplainAngle.PHRASE else ExplainAngle.OVERVIEW, initialIndex))
+    private var lineSong = initialSong
+    private var lineIndex = initialIndex.coerceAtLeast(0)
+    var record by mutableStateOf(newRecord(initialSong, ExplainRange.SONG, ExplainAngle.OVERVIEW, initialIndex))
         private set
 
     val isLoading: Boolean get() = record.turns.lastOrNull()?.status == ExplainStatus.GENERATING
@@ -100,12 +102,14 @@ class ExplainViewModel(
     val selectedLine: ExplainLine? get() = record.song.lines.getOrNull(record.lineIndex)
 
     init {
+        val startupId = record.id
         viewModelScope.launch {
             runCatching { history.all() }.onSuccess { records = it }
                 .onFailure { notice = "解读历史读取失败，原记录已保留" }
+            if (!startupPending || record.id != startupId) return@launch
+            if (initialSong.lines.isNotEmpty() || initialSong.title.isNotBlank()) restoreOrGenerate(anyAngle = true)
+            else error = "暂无歌词可解读"
         }
-        if (initialSong.lines.isNotEmpty()) generate()
-        else error = "暂无歌词可解读"
     }
 
     private fun newRecord(song: ExplainSong, range: ExplainRange, angle: ExplainAngle, index: Int) =
@@ -113,7 +117,8 @@ class ExplainViewModel(
 
     fun setRange(range: ExplainRange) {
         if (record.range == range || record.song.lines.isEmpty()) return
-        replaceSelection(range, anglesFor(range).first(), record.lineIndex.coerceAtLeast(0))
+        replaceSelection(range, anglesFor(range).first(), lineIndex, anyAngle = true,
+            song = if (range == ExplainRange.LINE) lineSong else record.song)
     }
 
     fun setAngle(angle: ExplainAngle) {
@@ -123,15 +128,39 @@ class ExplainViewModel(
 
     fun selectLine(index: Int) {
         if (index !in record.song.lines.indices) return
+        lineSong = record.song
+        lineIndex = index
         replaceSelection(ExplainRange.LINE,
             record.angle.takeIf { it in anglesFor(ExplainRange.LINE) } ?: ExplainAngle.PHRASE, index)
     }
 
-    private fun replaceSelection(range: ExplainRange, angle: ExplainAngle, index: Int) {
+    private fun replaceSelection(range: ExplainRange, angle: ExplainAngle, index: Int,
+        anyAngle: Boolean = false, song: ExplainSong = record.song) {
         stop()
-        record = newRecord(record.song, range, angle, index)
+        record = newRecord(song, range, angle, index)
         sourceLabel = ""
-        generate()
+        restoreOrGenerate(anyAngle)
+    }
+
+    private fun restoreOrGenerate(anyAngle: Boolean) {
+        selectionJob?.cancel()
+        val selection = record
+        error = null
+        selectionJob = viewModelScope.launch {
+            val saved = runCatching { history.all() }.getOrElse {
+                if (it is CancellationException) throw it
+                notice = "解读历史读取失败，原记录已保留"
+                emptyList()
+            }
+            if (record.id != selection.id) return@launch
+            records = saved
+            val previous = latestExplainReading(saved, selection, anyAngle)
+            if (previous == null) {
+                if (selection.song.lines.isEmpty()) error = "暂无歌词可解读"
+                else generate()
+            }
+            else displayHistory(previous)
+        }
     }
 
     fun regenerate() {
@@ -157,6 +186,8 @@ class ExplainViewModel(
     }
 
     fun stop() {
+        startupPending = false
+        selectionJob?.cancel()
         requestJob?.cancel()
         if (isLoading) {
             val last = record.turns.last()
@@ -168,6 +199,14 @@ class ExplainViewModel(
 
     fun openHistory(item: ExplainRecord) {
         stop()
+        if (explainSongIdentity(item.song) != explainSongIdentity(lineSong) || lineSong.lines.isEmpty()) {
+            lineSong = item.song
+            lineIndex = item.lineIndex.coerceAtLeast(0)
+        }
+        displayHistory(item)
+    }
+
+    private fun displayHistory(item: ExplainRecord) {
         record = item.copy(turns = item.turns.map {
             if (it.status == ExplainStatus.GENERATING) it.copy(status = ExplainStatus.STOPPED) else it
         })

@@ -66,7 +66,10 @@ class ExplainStateTest {
             write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n".toByteArray())
             write(body); flush()
         } }.use { server ->
-            onMain { state = ExplainViewModel(app, song, 2500, null) { server.config } }
+            onMain {
+                state = ExplainViewModel(app, song, 2500, null) { server.config }
+                state!!.setRange(ExplainRange.LINE)
+            }
             await { !it.isLoading && it.record.turns.firstOrNull()?.status == ExplainStatus.COMPLETE }
             var originalId = ""
             onMain { originalId = state!!.record.id; assertEquals(1, state!!.record.lineIndex); state!!.toggleFavorite() }

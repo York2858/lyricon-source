@@ -172,8 +172,9 @@
     <string name="item_base_paddings">内边距</string>
     <string name="item_base_manual_floating_lyric">手动切换为悬浮窗歌词</string>
     <string name="item_base_manual_floating_lyric_summary">开启后只显示悬浮窗歌词，关闭后恢复状态栏歌词。</string>
-    <string name="item_base_secondary_line_shows_roma">副行显示罗马音</string>
-    <string name="item_base_secondary_line_shows_roma_summary">关闭时副行显示翻译；开启后状态栏歌词副行优先显示罗马音，并保持两行显示。</string>
+    <string name="item_base_secondary_line_shows_roma">显示罗马音</string>
+    <string name="item_base_secondary_line_shows_roma_summary">罗马音优先，缺少时显示翻译</string>
+    <string name="item_base_secondary_line_translation_first_summary">翻译优先，缺少时显示罗马音</string>
     <string name="tile_manual_floating_lyric">悬浮窗歌词</string>
     <string name="option_visibility_default">默认</string>
     <string name="option_visibility_hide_when_playing">播放时隐藏</string>

@@ -30,7 +30,8 @@ internal class AiTranslationScheduler(
     private val maxRunning: Int,
     private val maxPending: Int,
     private val request: suspend (AiConfig, AiTranslationOptions, Song, List<String>) -> List<TranslationItem>? =
-        { config, options, song, lines -> AiTranslationRequester.request(config, options, song, lines) }
+        { config, options, song, lines -> AiTranslationRequester.request(config, options, song, lines) },
+    private val engine: String = "ai"
 ) {
     private companion object {
         const val TAG = "LyriconAiTranslator"
@@ -123,7 +124,7 @@ internal class AiTranslationScheduler(
             val current = job.generation == generation.get()
             if (!results.isNullOrEmpty() && current) {
                 cache.saveToDb(job.key, results, job.song, job.originalLines,
-                    job.configs, job.options, job.generation)
+                    job.configs, job.options, job.generation, engine)
             }
             job.deferred.complete(if (current) results else null)
         } catch (e: CancellationException) {
@@ -131,7 +132,7 @@ internal class AiTranslationScheduler(
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "AI translation failed for [${job.songName}]", e)
-            job.deferred.complete(null)
+            job.deferred.completeExceptionally(e)
         }
     }
 

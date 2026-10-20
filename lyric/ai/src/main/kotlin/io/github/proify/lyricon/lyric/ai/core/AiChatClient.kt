@@ -7,6 +7,7 @@
 package io.github.proify.lyricon.lyric.ai.core
 
 import android.util.Log
+import io.github.proify.lyricon.lyric.ai.translate.*
 import com.openai.client.OpenAIClient
 import com.openai.client.OpenAIClientImpl
 import okhttp3.OkHttpClient
@@ -86,13 +87,19 @@ object AiChatClient {
         systemPrompt: String,
         userPrompt: String,
         jsonObject: Boolean = false
-    ): String? = withContext(Dispatchers.IO) {
-        val apiKey = configs.apiKey ?: return@withContext null
+    ): String? = try { completeOrThrow(configs, systemPrompt, userPrompt, jsonObject) }
+    catch (e: CancellationException) { throw e }
+    catch (e: Exception) { Log.e(TAG, "AI request failed: ${e.javaClass.simpleName}"); null }
+
+    suspend fun completeOrThrow(configs: AiConfig, systemPrompt: String, userPrompt: String,
+        jsonObject: Boolean = false): String = withContext(Dispatchers.IO) {
+        val apiKey = configs.apiKey?.takeIf { it.isNotBlank() } ?: throw TranslationFailure(
+            TranslationDiagnostic("API_KEY", "未配置 API Key", "请到 AI 实验室填写当前提供商的 API Key。"))
         val baseUrl = resolveBaseUrl(configs)
         val entry = clientFor(baseUrl, apiKey)
         val client = entry.client
 
-        val transport = CancellableTransport(entry.transport)
+        val transport = CancellableTransport(entry.transport, secret = apiKey)
         try {
             val requestClient = client.withOptions { it.httpClient(transport) }
             val builder = paramsBuilder(configs, systemPrompt, userPrompt)
@@ -110,12 +117,12 @@ object AiChatClient {
                 }
             }
             response.choices().firstOrNull()?.message()?.content()?.orElse(null)
-                ?.trim()?.takeIf { it.isNotBlank() }
+                ?.trim()?.takeIf { it.isNotBlank() } ?: throw TranslationFailure(
+                    TranslationDiagnostic("EMPTY_RESPONSE", "AI 服务返回了空内容", "检查所选模型是否支持文本输出，或稍后重试。"))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e(TAG, "OpenAI compatible request failed: ${e.message}", e)
-            null
+            throw TranslationFailure(transport.failure ?: TranslationErrors.from(e, apiKey))
         } finally {
             transport.cancel()
             releaseClient(entry)
@@ -263,8 +270,11 @@ object AiChatClient {
     /** Keep the OkHttp Call alive through body parsing, so cancellation also aborts stalled bodies. */
     private class CancellableTransport(
         private val delegate: OkHttpClient,
-        private val closeDelegate: Boolean = false
+        private val closeDelegate: Boolean = false,
+        private val secret: String? = null
     ) : HttpClient {
+        @Volatile var failure: TranslationDiagnostic? = null
+            private set
         private var cancelled = false
         private val calls = mutableSetOf<Call>()
 
@@ -303,6 +313,8 @@ object AiChatClient {
                 }
 
                 override fun onResponse(call: Call, response: Response) {
+                    failure = if (!response.isSuccessful) TranslationErrors.http(response.code,
+                        runCatching { response.peekBody(2000).string() }.getOrDefault(""), secret) else null
                     Log.i(TAG, "AI HTTP response: status=${response.code}, protocol=${response.protocol}, contentType=${response.header("Content-Type")}")
                     request.body?.close()
                     if (call.isCanceled()) {

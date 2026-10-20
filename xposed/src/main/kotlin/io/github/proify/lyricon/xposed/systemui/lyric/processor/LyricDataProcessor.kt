@@ -54,13 +54,13 @@ object LyricDataProcessor {
      * 执行后置加工流水线 (异步)
      * 职责：顺序等待所有已启用的耗时插件处理完毕，合并结果后统一返回。
      */
-    suspend fun executePostProcessingPipeline(song: Song, style: LyricStyle): Song =
+    suspend fun executePostProcessingPipeline(song: Song, style: LyricStyle, onProgress: (Song) -> Unit = {}): Song =
         withContext(Dispatchers.Default) {
             var currentSong = song
             postProcessors.forEach { processor ->
                 if (processor.isEnabled(style)) {
                     try {
-                        currentSong = processor.process(currentSong, style)
+                        currentSong = processor.process(currentSong, style, onProgress)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
