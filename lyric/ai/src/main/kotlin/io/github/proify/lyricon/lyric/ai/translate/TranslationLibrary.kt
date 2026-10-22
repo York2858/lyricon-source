@@ -20,6 +20,8 @@ object TranslationLibraryContract {
 data class TranslationLibraryQuery(
     val search: String = "", val language: String = "", val favoritesOnly: Boolean = false,
     val sort: String = "newest", val offset: Int = 0, val status: String = "",
+    // Filter the latest timestamp of each song in the selected status, [from, before).
+    val updatedFrom: Long? = null, val updatedBefore: Long? = null,
 )
 
 @Serializable

@@ -29,7 +29,11 @@ internal class TranslationLibraryStore(private val cache: AiTranslationCache) {
             args += query.language
         }
         if (query.favoritesOnly) conditions += "favorite = 1"
-        val having = if (conditions.isEmpty()) "" else " HAVING MAX(CASE WHEN ${conditions.joinToString(" AND ")} THEN 1 ELSE 0 END) = 1"
+        val groupConditions = mutableListOf<String>()
+        if (conditions.isNotEmpty()) groupConditions += "MAX(CASE WHEN ${conditions.joinToString(" AND ")} THEN 1 ELSE 0 END) = 1"
+        query.updatedFrom?.let { groupConditions += "MAX(created_at) >= CAST(? AS INTEGER)"; args += it.toString() }
+        query.updatedBefore?.let { groupConditions += "MAX(created_at) < CAST(? AS INTEGER)"; args += it.toString() }
+        val having = if (groupConditions.isEmpty()) "" else " HAVING ${groupConditions.joinToString(" AND ")}"
         val sort = when (query.sort) {
             "oldest" -> "updated ASC, grouping ASC"
             "title" -> "title COLLATE NOCASE ASC, grouping ASC"

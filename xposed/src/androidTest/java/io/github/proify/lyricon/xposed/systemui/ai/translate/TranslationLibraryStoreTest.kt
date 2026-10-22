@@ -156,6 +156,65 @@ class TranslationLibraryStoreTest {
         assertEquals("original", store.lines("legacy", 0).lines.single().original)
     }
 
+    @Test fun timeRangeUsesLatestSongTimeWithInclusiveStartAndExclusiveEnd() = runBlocking {
+        cache.init(context)
+        save("old", title = "范围前"); save("start", title = "开始边界")
+        save("last", title = "结束当天"); save("end", title = "结束边界")
+        save("unknown", title = "未记录时间")
+        cache.withDatabase { db ->
+            listOf("old" to 99L, "start" to 100L, "last" to 199L, "end" to 200L, "unknown" to 0L).forEach { (id, time) ->
+                db.execSQL("UPDATE ai_cache SET created_at = ? WHERE song_id = ?", arrayOf<Any>(time, id))
+            }
+        }
+        val query = TranslationLibraryQuery(status = "translated", updatedFrom = 100, updatedBefore = 200)
+        val page = store.list(query)
+        assertEquals(setOf("开始边界", "结束当天"), page.songs.map { it.title }.toSet())
+        assertEquals(listOf(199L, 100L), page.songs.map { it.updatedAt })
+        assertEquals(2, page.totalSongs)
+        assertEquals(3, store.list(query.copy(updatedBefore = null)).totalSongs)
+        assertEquals(4, store.list(query.copy(updatedFrom = null)).totalSongs)
+        assertEquals(5, store.list(query.copy(updatedFrom = null, updatedBefore = null)).totalSongs)
+        assertTrue(store.list(query.copy(updatedFrom = 200, updatedBefore = 100)).songs.isEmpty())
+    }
+
+    @Test fun timeRangeChecksLatestInSelectedStatusAndCombinesWithOtherFilters() = runBlocking {
+        cache.init(context)
+        save("older"); save("newer", language = "日语")
+        store.favorite("older", true)
+        cache.saveOutcome(Song(name = "夜航", artist = "林屿"), "error", TranslationErrors.http(401))
+        cache.withDatabase { db ->
+            db.execSQL("UPDATE ai_cache SET created_at = 300 WHERE status = 'error'")
+            db.execSQL("UPDATE ai_cache SET created_at = 100 WHERE song_id = 'older'")
+            db.execSQL("UPDATE ai_cache SET created_at = 200 WHERE song_id = 'newer'")
+        }
+        val query = TranslationLibraryQuery(status = "translated", updatedFrom = 200, updatedBefore = 300,
+            language = "中文", favoritesOnly = true, search = "夜航")
+        val song = store.list(query).songs.single()
+        assertEquals(200L, song.updatedAt)
+        assertEquals(2, song.versions)
+        assertTrue(store.list(query.copy(updatedBefore = 200)).songs.isEmpty())
+        assertTrue(store.list(query.copy(status = "error", language = "", favoritesOnly = false)).songs.isEmpty())
+        assertEquals(1, store.list(query.copy(status = "error", language = "", favoritesOnly = false, updatedBefore = 301)).totalSongs)
+        assertTrue(store.list(query.copy(language = "韩语")).songs.isEmpty())
+    }
+
+    @Test fun timeRangeIsAppliedBeforePaginationAndTotalCount() = runBlocking {
+        cache.init(context)
+        repeat(35) { save("s$it", title = "song$it") }
+        save("excluded", title = "excluded")
+        cache.withDatabase { db ->
+            db.execSQL("UPDATE ai_cache SET created_at = 150")
+            db.execSQL("UPDATE ai_cache SET created_at = 250 WHERE song_id = 'excluded'")
+        }
+        val query = TranslationLibraryQuery(status = "translated", updatedFrom = 100, updatedBefore = 200, sort = "title")
+        val first = store.list(query)
+        val second = store.list(query.copy(offset = 30))
+        assertEquals(35, first.totalSongs); assertEquals(35, second.totalSongs)
+        assertTrue(first.hasMore); assertFalse(second.hasMore)
+        assertEquals(30, first.songs.size); assertEquals(5, second.songs.size)
+        assertEquals(35, (first.songs + second.songs).map { it.key }.distinct().size)
+    }
+
     @Test fun groupsAndLongSongsArePagedWithoutSkippingContent() = runBlocking {
         cache.init(context)
         repeat(35) { save("s$it", title = "song$it") }

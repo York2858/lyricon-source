@@ -3,6 +3,7 @@ package io.github.proify.lyricon.app.activity.lyric
 import android.content.ClipData
 import android.content.Intent
 import android.app.Activity
+import android.app.DatePickerDialog
 import android.provider.DocumentsContract
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -47,6 +48,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 import java.text.DateFormat
 import java.util.Date
+import java.util.Calendar
 
 private data class LibraryDeletion(val ids: List<String> = emptyList(), val groups: List<String> = emptyList(),
     val count: Int, val favorites: Int, val description: String)
@@ -60,6 +62,7 @@ internal fun TranslationLibraryScreen(state: TranslationLibraryViewModel, onClos
     val pageStates = rememberSaveableStateHolder()
     var deletion by remember { mutableStateOf<LibraryDeletion?>(null) }
     var showVersionInfo by remember { mutableStateOf(false) }
+    var showTimeFilter by rememberSaveable { mutableStateOf(false) }
     var folderHelp by rememberSaveable { mutableStateOf(false) }
     var showExport by remember { mutableStateOf(false) }
     var exportFormat by rememberSaveable { mutableStateOf(TranslationExportFormat.TXT.name) }
@@ -77,7 +80,7 @@ internal fun TranslationLibraryScreen(state: TranslationLibraryViewModel, onClos
     var pendingBatchSongs by rememberSaveable { mutableStateOf<String?>(null) }
     var batchFormat by rememberSaveable { mutableStateOf(TranslationExportFormat.LINE.name) }
     var batchContent by rememberSaveable { mutableStateOf(TranslationExportContent.BILINGUAL.name) }
-    var batchDestination by rememberSaveable { mutableStateOf(BatchExportDestination.ZIP.name) }
+    var batchDestination by rememberSaveable { mutableStateOf(BatchExportDestination.MUSIC.name) }
     var batchDuplicates by rememberSaveable { mutableStateOf(BatchDuplicatePolicy.SKIP.name) }
     fun batchSongs() = pendingBatchSongs?.let { TranslationLibraryContract.json.decodeFromString<List<TranslationSongEntry>>(it) }.orEmpty()
     fun batchOptions() = BatchExportOptions(TranslationExportOptions(TranslationExportFormat.valueOf(batchFormat),
@@ -160,6 +163,14 @@ internal fun TranslationLibraryScreen(state: TranslationLibraryViewModel, onClos
                     state.updateQuery(state.query.copy(sort = it))
                 }
             }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val filtered = state.query.updatedFrom != null || state.query.updatedBefore != null
+                LibraryButton(if (filtered) libraryTimeRange(state.query) else "翻译时间：不限", selected = filtered,
+                    onClick = { showTimeFilter = true })
+                if (filtered) LibraryButton("清除时间", onClick = {
+                    state.updateQuery(state.query.copy(updatedFrom = null, updatedBefore = null))
+                })
+            }
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (state.selecting) "已选 ${state.selected.size} 首" else "${state.page?.totalSongs ?: 0} 首", modifier = Modifier.weight(1f), fontSize = 13.sp)
                 if (state.selecting) {
@@ -212,6 +223,8 @@ internal fun TranslationLibraryScreen(state: TranslationLibraryViewModel, onClos
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
             Text(listOf(version.artist, version.language.ifBlank { "语言未记录" }).filter { it.isNotBlank() }.joinToString(" · "),
                 fontSize = 12.sp, color = colors.onSurfaceVariantSummary, modifier = Modifier.padding(horizontal = 20.dp))
+            Text("翻译时间：${libraryDate(version.createdAt)}", fontSize = 12.sp, color = colors.onSurfaceVariantSummary,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 LibraryButton(if (version.favorite) "已收藏" else "收藏", selected = version.favorite, enabled = !state.busy, onClick = { state.favorite(version) })
                 LibraryButton("复制全文", enabled = !state.busy, onClick = { state.copy { text -> scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("双语歌词", text))) } } })
@@ -292,7 +305,7 @@ internal fun TranslationLibraryScreen(state: TranslationLibraryViewModel, onClos
                                     if (version.resolution.isNotBlank()) Text(version.resolution, fontSize = 12.sp, color = colors.primary)
                                 }
                                 Text(if (version.source == "google") "Google 翻译（保底）" else version.model.ifBlank { "模型未记录" }, fontSize = 13.sp, color = colors.onSurfaceVariantSummary)
-                                Text(libraryDate(version.createdAt), fontSize = 12.sp, color = colors.onSurfaceVariantSummary)
+                                Text("${if (version.status == "translated") "翻译时间" else "发生时间"}：${libraryDate(version.createdAt)}", fontSize = 12.sp, color = colors.onSurfaceVariantSummary)
                             }
                         }
                         if (state.versions.isEmpty() && !state.loading && state.error == null) item { LibraryEmpty("暂无翻译版本", "记录可能已删除，返回列表刷新即可") }
@@ -305,14 +318,16 @@ internal fun TranslationLibraryScreen(state: TranslationLibraryViewModel, onClos
                                         Text(song.title.ifBlank { "未知歌曲（旧记录）" }, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                         if (state.query.status in setOf("skipped", "error") && (song.skipped > 0 || song.errors > 0)) Text("翻译 ${song.translated} · 跳过 ${song.skipped} · 报错 ${song.errors}", fontSize = 12.sp, color = colors.primary)
                                         Text("${song.artist.ifBlank { "歌手未记录" }} · ${song.languages.ifBlank { "语言未记录" }} · ${song.versions} 条记录", fontSize = 12.sp, color = colors.onSurfaceVariantSummary)
+                                        Text("${if (state.query.status in setOf("skipped", "error")) "最近发生" else "最近翻译"}：${libraryDate(song.updatedAt)}", fontSize = 12.sp, color = colors.onSurfaceVariantSummary,
+                                            modifier = Modifier.padding(top = 4.dp))
                                     }
                                     if (song.favorites > 0) Text("★ ${song.favorites}", fontSize = 13.sp, color = colors.primary)
                                 }
                             }
                         }
                         if (state.songs.isEmpty() && !state.loading && state.error == null) item { LibraryEmpty(
-                            if (state.query.search.isNotBlank() || state.query.language.isNotBlank() || state.query.favoritesOnly) "没有符合条件的歌曲" else "还没有翻译记录",
-                            if (state.query.search.isNotBlank() || state.query.language.isNotBlank() || state.query.favoritesOnly) "可以更换关键词，或切回全部语言与全部记录" else "播放歌曲后会记录翻译结果，以及跳过或失败的具体原因") }
+                            if (state.query.search.isNotBlank() || state.query.language.isNotBlank() || state.query.favoritesOnly || state.query.updatedFrom != null || state.query.updatedBefore != null) "没有符合条件的歌曲" else "还没有翻译记录",
+                            if (state.query.search.isNotBlank() || state.query.language.isNotBlank() || state.query.favoritesOnly || state.query.updatedFrom != null || state.query.updatedBefore != null) "可以调整时间范围、关键词、语言或收藏条件" else "播放歌曲后会记录翻译结果，以及跳过或失败的具体原因") }
                     }
                     if (state.error != null) item { LibraryCard {
                         Text(state.error!!, fontSize = 14.sp)
@@ -410,6 +425,10 @@ internal fun TranslationLibraryScreen(state: TranslationLibraryViewModel, onClos
             }
         }
     }
+    if (showTimeFilter) LibraryTimeFilter(state.query, onDismiss = { showTimeFilter = false }) { from, before ->
+        state.updateQuery(state.query.copy(updatedFrom = from, updatedBefore = before))
+        showTimeFilter = false
+    }
     if (showBatchExport) WindowDialog(show = true, title = "批量导出歌词", onDismissRequest = { showBatchExport = false }) {
         LazyColumn(Modifier.heightIn(max = 500.dp).testTag("translation-batch-options"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { Text("已选 ${batchSongs().size} 首 · 每首导出最新版本。", fontSize = 14.sp) }
@@ -422,14 +441,18 @@ internal fun TranslationLibraryScreen(state: TranslationLibraryViewModel, onClos
                     selected = content.name == batchContent, onClick = { batchContent = content.name }) }
             } }
             item { Text("保存位置", fontSize = 13.sp, color = colors.onSurfaceVariantSummary) }
-            item { LibraryChoiceMenu(BatchExportDestination.valueOf(batchDestination).label, batchDestination,
-                BatchExportDestination.entries.map { it.name to it.label }) { batchDestination = it } }
+            items(BatchExportDestination.entries) { destination ->
+                LibraryButton(destination.label, selected = batchDestination == destination.name,
+                    onClick = { batchDestination = destination.name })
+            }
             if (batchDestination != BatchExportDestination.ZIP.name) {
                 item { Text("同名文件", fontSize = 13.sp, color = colors.onSurfaceVariantSummary) }
                 item { LibraryChoiceMenu(BatchDuplicatePolicy.valueOf(batchDuplicates).label, batchDuplicates,
                     BatchDuplicatePolicy.entries.map { it.name to it.label }) { batchDuplicates = it } }
             }
             if (batchDestination == BatchExportDestination.MUSIC.name) item {
+                Text("逐首保存到对应音乐文件夹；请先授权包含这些歌曲的目录。无法定位或未授权的歌曲会显示失败原因。",
+                    fontSize = 12.sp, color = colors.onSurfaceVariantSummary)
                 LibraryButton("授权音乐文件夹", enabled = !state.busy, onClick = {
                     pendingFolderKind = "batch-authorize"
                     launchFolderPicker(DocumentsContract.buildTreeDocumentUri("com.android.externalstorage.documents", "primary:Music"))
@@ -515,6 +538,48 @@ internal fun TranslationLibraryScreen(state: TranslationLibraryViewModel, onClos
         }
     } }
 }
+
+@Composable
+private fun LibraryTimeFilter(query: TranslationLibraryQuery, onDismiss: () -> Unit, onApply: (Long?, Long?) -> Unit) {
+    val context = LocalContext.current
+    val colors = MiuixTheme.colorScheme
+    var from by rememberSaveable { mutableStateOf(query.updatedFrom) }
+    var end by rememberSaveable { mutableStateOf(query.updatedBefore?.let { libraryDayStart(it, -1) }) }
+    fun chooseDate(value: Long?, onChoose: (Long) -> Unit) {
+        val initial = Calendar.getInstance().apply { timeInMillis = value ?: System.currentTimeMillis() }
+        DatePickerDialog(context, { _, year, month, day ->
+            val selected = Calendar.getInstance().apply { clear(); set(year, month, day) }
+            onChoose(selected.timeInMillis)
+        }, initial.get(Calendar.YEAR), initial.get(Calendar.MONTH), initial.get(Calendar.DAY_OF_MONTH)).show()
+    }
+    val valid = from == null || end == null || from!! <= end!!
+    WindowDialog(show = true, title = "翻译时间范围", onDismissRequest = onDismiss) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("按每首歌最近翻译时间筛选；跳过、报错记录按最近发生时间筛选。日期包含首尾两天。", fontSize = 13.sp, color = colors.onSurfaceVariantSummary)
+            LibraryButton("开始日期：${from?.let(::libraryDayDate) ?: "不限"}", onClick = { chooseDate(from) { from = it } })
+            if (from != null) LibraryButton("不限开始日期", onClick = { from = null })
+            LibraryButton("结束日期：${end?.let(::libraryDayDate) ?: "不限"}", onClick = { chooseDate(end) { end = it } })
+            if (end != null) LibraryButton("不限结束日期", onClick = { end = null })
+            if (!valid) Text("结束日期不能早于开始日期", fontSize = 13.sp, color = colors.primary)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LibraryButton("取消", onClick = onDismiss)
+                LibraryButton("清除筛选", onClick = { onApply(null, null) })
+                LibraryButton("应用", enabled = valid, onClick = { onApply(from, end?.let { libraryDayStart(it, 1) }) })
+            }
+        }
+    }
+}
+
+private fun libraryDayStart(time: Long, dayOffset: Int = 0): Long = Calendar.getInstance().apply {
+    timeInMillis = time
+    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+    add(Calendar.DAY_OF_MONTH, dayOffset)
+}.timeInMillis
+
+private fun libraryDayDate(time: Long): String = DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(time))
+
+private fun libraryTimeRange(query: TranslationLibraryQuery): String =
+    "${query.updatedFrom?.let(::libraryDayDate) ?: "不限"} — ${query.updatedBefore?.let { libraryDayDate(libraryDayStart(it, -1)) } ?: "不限"}"
 
 @Composable
 private fun LibraryChoiceMenu(label: String, selected: String, choices: List<Pair<String, String>>, onChoose: (String) -> Unit) {

@@ -363,10 +363,101 @@ class TranslationLibraryScreenTest {
         compose.onNodeWithText("逐行 LRC").performClick()
         compose.onNodeWithText("TTML").performClick()
         compose.onNodeWithText("仅译文").performClick()
-        compose.onNodeWithText("打包 ZIP").performClick()
-        compose.onNodeWithText("音乐所在文件夹").performClick()
+        compose.onNodeWithTag("translation-batch-options").performScrollToNode(hasText("音乐所在文件夹"))
+        compose.onNodeWithText("音乐所在文件夹").assertIsDisplayed()
+        compose.onNodeWithTag("translation-batch-options").performScrollToNode(hasText("统一文件夹"))
+        compose.onNodeWithText("统一文件夹").assertIsDisplayed()
+        screenshot("translation-batch-destinations", popup = true)
+        compose.onNodeWithTag("translation-batch-options").performScrollToNode(hasText("打包 ZIP"))
+        compose.onNodeWithText("打包 ZIP").assertIsDisplayed()
+        // Authorization is visible without choosing a destination: music is the default.
         compose.onNodeWithTag("translation-batch-options").performScrollToNode(hasText("授权音乐文件夹"))
         compose.onNodeWithText("授权音乐文件夹").assertExists()
+    }
+
+    @Test fun translationTimeFilterAppliesCancelsAndClearsWithoutLosingOtherFilters() {
+        show()
+        compose.onNodeWithText("最近翻译：", substring = true).assertIsDisplayed()
+        val from = java.util.Calendar.getInstance().apply {
+            timeInMillis = repository.record.createdAt
+            set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val before = java.util.Calendar.getInstance().apply { timeInMillis = from; add(java.util.Calendar.DAY_OF_MONTH, 1) }.timeInMillis
+        compose.runOnUiThread { state.updateQuery(state.query.copy(updatedFrom = from, updatedBefore = before, language = "中文")) }
+        compose.waitUntil(5000) { !state.loading }
+        compose.onNodeWithText("清除时间").assertIsDisplayed()
+        // The active range button is the sibling before Clear Time.
+        compose.onNode(hasText(" — ", substring = true)).performClick()
+        compose.onNodeWithText("翻译时间范围").assertIsDisplayed()
+        screenshot("translation-library-time-dialog", popup = true)
+        compose.onNodeWithText("应用").performClick()
+        compose.waitUntil(5000) { !state.loading }
+        assertEquals(from, repository.lastQuery.updatedFrom)
+        assertEquals(before, repository.lastQuery.updatedBefore)
+        assertEquals("中文", repository.lastQuery.language)
+        compose.onNode(hasText(" — ", substring = true)).performClick()
+        compose.onNodeWithText("不限开始日期").performClick()
+        compose.onNodeWithText("取消").performClick()
+        assertEquals(from, state.query.updatedFrom)
+        compose.onNodeWithText("清除时间").performClick()
+        compose.waitUntil(5000) { !state.loading }
+        assertNull(repository.lastQuery.updatedFrom); assertNull(repository.lastQuery.updatedBefore)
+        assertEquals("中文", repository.lastQuery.language)
+        compose.onNodeWithText("翻译时间：不限").assertIsDisplayed()
+        screenshot("translation-library-time-filter")
+    }
+
+    @Test fun emptyTimeRangeCanBeClearedAndReversedRangeCannotBeApplied() {
+        show()
+        val time = repository.record.createdAt
+        compose.runOnUiThread { state.updateQuery(state.query.copy(updatedFrom = time + 86400000)) }
+        compose.waitUntil(5000) { !state.loading }
+        compose.onNodeWithText("没有符合条件的歌曲").assertIsDisplayed()
+        compose.onNodeWithText("清除时间").performClick()
+        compose.waitUntil(5000) { !state.loading }
+        compose.onNodeWithText("夜航").assertIsDisplayed()
+        compose.runOnUiThread { state.updateQuery(state.query.copy(updatedFrom = time + 86400000, updatedBefore = time)) }
+        compose.waitUntil(5000) { !state.loading }
+        compose.onNode(hasText(" — ", substring = true)).performClick()
+        compose.onNodeWithText("结束日期不能早于开始日期").assertIsDisplayed()
+        compose.onNodeWithText("应用").assertIsNotEnabled()
+        compose.onNodeWithText("清除筛选").performClick()
+        compose.waitUntil(5000) { !state.loading }
+        assertNull(repository.lastQuery.updatedFrom); assertNull(repository.lastQuery.updatedBefore)
+    }
+
+    @Test fun datePickersIncludeBothBoundariesOfTheSelectedLocalDay() {
+        show()
+        val date = java.util.Calendar.getInstance().apply { timeInMillis = repository.record.createdAt }
+        fun chooseDate() {
+            androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom(android.widget.DatePicker::class.java))
+                .perform(object : androidx.test.espresso.ViewAction {
+                    override fun getConstraints() = androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom(android.widget.DatePicker::class.java)
+                    override fun getDescription() = "选择翻译发生的本地日期"
+                    override fun perform(uiController: androidx.test.espresso.UiController, view: android.view.View) {
+                        (view as android.widget.DatePicker).updateDate(date.get(java.util.Calendar.YEAR),
+                            date.get(java.util.Calendar.MONTH), date.get(java.util.Calendar.DAY_OF_MONTH))
+                    }
+                })
+            androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.withId(android.R.id.button1))
+                .perform(androidx.test.espresso.action.ViewActions.click())
+        }
+        compose.onNodeWithText("翻译时间：不限").performClick()
+        compose.onNodeWithText("开始日期：不限").performClick()
+        chooseDate()
+        compose.onNodeWithText("结束日期：不限").performClick()
+        chooseDate()
+        compose.onNodeWithText("应用").performClick()
+        compose.waitUntil(5000) { !state.loading }
+        date.apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+        }
+        assertEquals(date.timeInMillis, repository.lastQuery.updatedFrom)
+        date.add(java.util.Calendar.DAY_OF_MONTH, 1)
+        assertEquals(date.timeInMillis, repository.lastQuery.updatedBefore)
+        compose.onNodeWithText("夜航").assertIsDisplayed()
     }
 
     @Test fun batchCompletionShowsSummaryAndPerSongResult() {
@@ -392,7 +483,9 @@ class TranslationLibraryScreenTest {
         override suspend fun list(query: TranslationLibraryQuery): TranslationLibraryPage {
             if (fail) error("数据库暂不可用")
             lastQuery = query
-            val visible = deleted == 0 && (query.status.isBlank() || query.status == record.status) && (!query.favoritesOnly || record.favorite)
+            val visible = deleted == 0 && (query.status.isBlank() || query.status == record.status) && (!query.favoritesOnly || record.favorite) &&
+                (query.updatedFrom == null || record.createdAt >= query.updatedFrom!!) &&
+                (query.updatedBefore == null || record.createdAt < query.updatedBefore!!)
             return TranslationLibraryPage(if (visible) listOf(song) else emptyList(), false, if (visible) 1 else 0, 1, 125, if (record.favorite) 1 else 0, listOf("中文", "日语"))
         }
         override suspend fun versions(group: String, offset: Int, status: String) = TranslationVersionPage(if (deleted == 0 && (status.isBlank() || status == record.status)) listOf(record) else emptyList(), false)
