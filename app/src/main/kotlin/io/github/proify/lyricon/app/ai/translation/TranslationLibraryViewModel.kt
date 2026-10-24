@@ -24,6 +24,7 @@ internal class TranslationLibraryViewModel @JvmOverloads constructor(application
     var selecting by mutableStateOf(false)
     var loading by mutableStateOf(false); private set
     var busy by mutableStateOf(false); private set
+    var lineCleanup by mutableStateOf<TranslationLineRecordSummary?>(null); private set
     var error by mutableStateOf<String?>(null); private set
     var notice by mutableStateOf<String?>(null); private set
     private var job: Job? = null
@@ -109,6 +110,17 @@ internal class TranslationLibraryViewModel @JvmOverloads constructor(application
         group = value; version = null; versions = emptyList(); moreVersions = false
         load { loadVersions(false) }
     }
+    fun openSongForReading(value: TranslationSongEntry) {
+        group = value; version = null; versions = emptyList(); moreVersions = false
+        load {
+            loadVersions(false)
+            versions.firstOrNull()?.takeIf { it.status == "translated" }?.let {
+                version = it; lines = emptyList(); nextLine = null
+                loadLines(false)
+            }
+        }
+    }
+    fun moreSongVersions() = load { loadVersions(true) }
     private suspend fun loadVersions(append: Boolean) {
         val result = repository.versions(checkNotNull(group).key, if (append) versions.size else 0, query.status)
         versions = (if (append) versions + result.versions else result.versions).distinctBy { it.id }
@@ -176,6 +188,23 @@ internal class TranslationLibraryViewModel @JvmOverloads constructor(application
             favorites = (song.favorites - removed.count { it.favorite }).coerceAtLeast(0)) }
         notice = "已删除 $count 条记录"
         refresh()
+    }
+    fun prepareLineCleanup() = mutate {
+        val summary = repository.lineRecordSummary()
+        if (summary.count == 0) notice = "没有可删除的逐行记录" else lineCleanup = summary
+    }
+    fun dismissLineCleanup() { lineCleanup = null }
+    fun confirmLineCleanup() {
+        if (lineCleanup == null) return
+        mutate {
+            val count = repository.deleteAllLineRecords()
+            lineCleanup = null
+            job?.cancel(); revision++; loading = false
+            group = null; version = null; versions = emptyList(); lines = emptyList()
+            endSelection()
+            notice = "已删除 $count 条逐行记录"
+            refresh()
+        }
     }
     private suspend fun fullLines(value: TranslationVersion): List<TranslationLine> {
         val all = mutableListOf<TranslationLine>(); var offset = 0

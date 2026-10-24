@@ -28,6 +28,8 @@ internal class TranslationLibraryEndpoint(private val context: Context, cache: A
                         TranslationLibraryContract.LINES -> json.encodeToString(store.lines(request.getString("id").orEmpty(), request.getInt("offset")))
                         TranslationLibraryContract.FAVORITE -> { check(store.favorite(request.getString("id").orEmpty(), request.getBoolean("favorite")) > 0) { "记录已不存在" }; "ok" }
                         TranslationLibraryContract.DELETE -> store.delete(request.getStringArrayList("ids").orEmpty(), request.getStringArrayList("groups").orEmpty(), request.getString("status").orEmpty()).toString()
+                        TranslationLibraryContract.LINE_RECORD_SUMMARY -> json.encodeToString(store.lineRecordSummary())
+                        TranslationLibraryContract.DELETE_LINE_RECORDS -> store.deleteAllLineRecords().toString()
                         TranslationLibraryContract.MUSIC_LOCATION -> {
                             val (title, artist) = store.songIdentity(request.getString("id").orEmpty())
                             json.encodeToString(TranslationMusicLocator.locate(context, title, artist))

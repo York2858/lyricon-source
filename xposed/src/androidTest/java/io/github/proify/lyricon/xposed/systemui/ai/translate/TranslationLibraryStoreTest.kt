@@ -230,6 +230,62 @@ class TranslationLibraryStoreTest {
         assertEquals((0 until 150).toList(), (one.lines + two.lines + three.lines).map { it.index })
     }
 
+    @Test fun timingSummaryKeepsMixedVersionsAndRespectsStatusFilters() = runBlocking {
+        cache.init(context)
+        cache.saveToDb("word", listOf(TranslationItem(0, "你好")), timedSong(), listOf("hello world"))
+        cache.saveToDb("line", listOf(TranslationItem(0, "你好")), timedSong(false), listOf("hello world"))
+        cache.saveOutcome(timedSong(false), "error", TranslationDiagnostic("TEST", "test", "test"))
+        val all = store.list(TranslationLibraryQuery(status = "translated")).songs.single()
+        assertEquals(2, all.versions)
+        assertEquals(1, all.wordTimedVersions); assertEquals(1, all.lineTimedVersions)
+        assertEquals("逐字 / 逐行", translationTimingLabel(all))
+        val errors = store.list(TranslationLibraryQuery(status = "error")).songs.single()
+        assertEquals(0, errors.wordTimedVersions); assertEquals(1, errors.lineTimedVersions)
+    }
+
+    @Test fun migrationRechecksOldWordFlagsWithoutChangingTranslationsOrFavorites() = runBlocking {
+        cache.init(context)
+        val repeated = timedSong().copy(lyrics = listOf(RichLyricLine(begin = 60000, end = 62000, text = "hello world",
+            words = listOf(LyricWord(begin = 60000, end = 62000, text = "hello "), LyricWord(begin = 60000, end = 62000, text = "world")))))
+        cache.saveToDb("old", listOf(TranslationItem(0, "你好")), repeated, listOf("hello world"))
+        cache.saveToDb("real", listOf(TranslationItem(0, "世界")), timedSong(), listOf("hello world"))
+        store.favorite("old", true)
+        cache.withDatabase { db -> db.execSQL("UPDATE ai_cache SET has_word_timing = 1 WHERE song_id = 'old'"); db.version = 4 }
+        cache.close()
+        cache = AiTranslationCache(20, generation, scope, name); store = TranslationLibraryStore(cache); cache.init(context)
+        val group = store.list(TranslationLibraryQuery()).songs.single()
+        assertEquals(1, group.wordTimedVersions); assertEquals(1, group.lineTimedVersions)
+        val old = store.versions(group.key, 0).versions.first { it.id == "old" }
+        assertFalse(old.hasWordTiming); assertTrue(old.favorite)
+        assertEquals("你好", store.lines("old", 0).lines.single().translation)
+    }
+
+    @Test fun deleteAllLineRecordsIsGlobalPreservesOtherKindsAndInvalidatesLateWrites() = runBlocking {
+        cache.init(context)
+        repeat(125) { cache.saveToDb("line$it", listOf(TranslationItem(0, "逐行 $it")), timedSong(false), listOf("hello world")) }
+        cache.saveToDb("word", listOf(TranslationItem(0, "逐字")), timedSong(), listOf("hello world"))
+        save("plain", title = "没有时间轴")
+        cache.saveOutcome(timedSong(false), "error", TranslationErrors.http(401))
+        cache.saveOutcome(timedSong(false), "skipped", TranslationDiagnostic("DISABLED", "未开启翻译", "开启翻译"))
+        store.favorite("line0", true); store.favorite("line124", true); store.favorite("word", true)
+        assertEquals(TranslationLineRecordSummary(125, 2), store.lineRecordSummary())
+        val before = generation.get()
+        assertEquals(125, store.deleteAllLineRecords())
+        assertTrue(generation.get() > before)
+        assertNull(cache.getFromMemory("line124")); assertNull(cache.getFromDb("line0"))
+        assertNotNull(cache.getFromDb("word")); assertNotNull(cache.getFromDb("plain"))
+        assertEquals(4, store.list(TranslationLibraryQuery()).totalVersions)
+        val group = store.list(TranslationLibraryQuery(status = "translated")).songs.first { it.title == "夜航" }
+        assertTrue(store.versions(group.key, 0, "translated").versions.single().hasWordTiming)
+        assertTrue(store.versions(group.key, 0, "translated").versions.single().favorite)
+        assertEquals(1, store.versions(group.key, 0, "error").versions.size)
+        assertEquals(1, store.versions(group.key, 0, "skipped").versions.size)
+        cache.saveToDb("line0", listOf(TranslationItem(0, "late")), expectedGeneration = before)
+        assertNull(cache.getFromDb("line0"))
+        assertEquals(TranslationLineRecordSummary(0, 0), store.lineRecordSummary())
+        assertEquals(0, store.deleteAllLineRecords())
+    }
+
     private fun timedSong(words: Boolean = true) = Song(name = "夜航", artist = "林屿", lyrics = listOf(
         RichLyricLine(begin = 60000, end = 62000, text = "hello world", words = if (words) listOf(
             LyricWord(begin = 60000, end = 61000, text = "hello "), LyricWord(begin = 61000, end = 62000, text = "world")) else null)))

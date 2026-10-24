@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.lyric.ai.core.AiConfig
 import java.util.Locale
+import io.github.proify.lyricon.lyric.ai.translate.hasTranslationWordTiming
 import io.github.proify.lyricon.lyric.ai.translate.TranslationTiming
 import io.github.proify.lyricon.lyric.ai.translate.TranslationWord
 import io.github.proify.lyricon.lyric.ai.translate.TranslationDiagnostic
@@ -182,7 +183,7 @@ internal class AiTranslationCache(
                         current.copy(words = old.words) else current
                 }
                 put("timing_json", json.encodeToString(merged))
-                put("has_word_timing", if (merged.any { it.words.size > 1 }) 1 else 0)
+                put("has_word_timing", if (hasTranslationWordTiming(merged)) 1 else 0)
             }
         }, "song_id = ?", arrayOf(key))
     }
@@ -211,7 +212,7 @@ internal class AiTranslationCache(
         put("original_json", if (lines.isEmpty()) "" else json.encodeToString(lines))
         val timing = timings(song)
         put("timing_json", if (timing.isEmpty()) "" else json.encodeToString(timing))
-        put("has_word_timing", if (timing.any { it.words.size > 1 }) 1 else 0)
+        put("has_word_timing", if (hasTranslationWordTiming(timing)) 1 else 0)
     }
 
     suspend fun <T> withDatabase(invalidate: Boolean = false, block: (SQLiteDatabase) -> T): T =
@@ -244,7 +245,7 @@ internal class AiTranslationCache(
 
         companion object {
             const val DATABASE_NAME = "lyricon_translation.db"
-            const val DATABASE_VERSION = 4
+            const val DATABASE_VERSION = 5
             const val TABLE_NAME = "ai_cache"
             const val COLUMN_ID = "song_id"
             const val COLUMN_DATA = "translation_json"
@@ -311,6 +312,20 @@ internal class AiTranslationCache(
             if (oldVersion < 3) {
                 db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN timing_json TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN has_word_timing INTEGER NOT NULL DEFAULT 0")
+            }
+            if (oldVersion < 5) {
+                // Recheck old positive flags once; do not reparse every timeline while scrolling.
+                db.query(TABLE_NAME, arrayOf(COLUMN_ID, "timing_json"), "has_word_timing = 1",
+                    null, null, null, null).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val timing = runCatching {
+                            json.decodeFromString<List<TranslationTiming>>(cursor.getString(1))
+                        }.getOrDefault(emptyList())
+                        if (!hasTranslationWordTiming(timing)) db.update(TABLE_NAME,
+                            ContentValues().apply { put("has_word_timing", 0) },
+                            "$COLUMN_ID = ?", arrayOf(cursor.getString(0)))
+                    }
+                }
             }
         }
     }

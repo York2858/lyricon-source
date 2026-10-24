@@ -67,17 +67,16 @@ subprojects {
             val variantName = variant.name
             val moduleName = project.name
             val buildType = variant.buildType ?: "others"
-            val versionName =
-                variant.outputs.firstOrNull()?.versionName?.getOrElse(project.version.toString())
-                    ?: "1.0"
             val exportedApkName: (String) -> String = { fileName ->
-                val abiSuffix = when {
-                    fileName.contains("arm64-v8a") -> "-arm64-v8a"
-                    fileName.contains("armeabi-v7a") -> "-armeabi-v7a"
-                    fileName.contains("x86_64") -> "-x86_64"
-                    else -> ""
+                val abi = when {
+                    fileName.contains("arm64-v8a") -> "arm64-v8a"
+                    fileName.contains("armeabi-v7a") -> "armeabi-v7a"
+                    fileName.contains("x86_64") -> "x86_64"
+                    fileName.contains("x86") -> "x86"
+                    else -> "universal"
                 }
-                "${moduleName}-${versionName}-${buildType}${abiSuffix}.apk"
+                val displayName = if (moduleName == "lyricon") "词幕" else moduleName
+                "$displayName-$buildType-$abi.apk"
             }
 
             // --- A. 创建或获取该 BuildType 专属的 Zip 任务 ---
@@ -125,7 +124,7 @@ subprojects {
                     into(exportDir)
                     include("*.apk")
                     rename { fileName -> exportedApkName(fileName) }
-                    // 每次打包都确认外部副本存在；不清理其他版本或其他构建类型。
+                    // 每次更新对应类型和架构的固定文件名，保留其他类型和架构。
                     outputs.upToDateWhen { false }
                     doLast {
                         logger.lifecycle("APK 已额外复制到：$exportDir")

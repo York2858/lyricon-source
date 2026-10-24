@@ -8,6 +8,7 @@ import io.github.proify.android.extensions.json
 /** All access goes through the cache mutex, including metadata and memory invalidation. */
 internal class TranslationLibraryStore(private val cache: AiTranslationCache) {
     private val groupKey = "CASE WHEN trim(title) = '' THEN song_id ELSE lower(trim(title)) || char(31) || lower(trim(artist)) END"
+    private val lineRecords = "status = 'translated' AND has_word_timing = 0 AND timing_json != '' AND timing_json != '[]'"
 
     suspend fun songIdentity(id: String): Pair<String, String> = cache.withDatabase { db ->
         db.rawQuery("SELECT title,artist FROM ai_cache WHERE song_id = ?", arrayOf(id)).use {
@@ -40,9 +41,9 @@ internal class TranslationLibraryStore(private val cache: AiTranslationCache) {
             else -> "updated DESC, grouping ASC"
         }
         val statusWhere = when (query.status) { "skipped", "error", "translated" -> " WHERE status = '${query.status}'"; else -> "" }
-        val groups = "SELECT $groupKey AS grouping, MAX(title) AS title, MAX(artist) AS artist, COUNT(*) AS versions, SUM(line_count) AS lines, SUM(favorite) AS favorites, MAX(created_at) AS updated, group_concat(DISTINCT target_language) AS languages, SUM(status = 'skipped') AS skipped, SUM(status = 'error') AS errors, SUM(status = 'translated') AS translated FROM ai_cache$statusWhere GROUP BY grouping$having"
+        val groups = "SELECT $groupKey AS grouping, MAX(title) AS title, MAX(artist) AS artist, COUNT(*) AS versions, SUM(line_count) AS lines, SUM(favorite) AS favorites, MAX(created_at) AS updated, group_concat(DISTINCT target_language) AS languages, SUM(status = 'skipped') AS skipped, SUM(status = 'error') AS errors, SUM(status = 'translated') AS translated, SUM(CASE WHEN has_word_timing = 1 THEN 1 ELSE 0 END) AS word_versions, SUM(CASE WHEN has_word_timing = 0 AND timing_json != '' AND timing_json != '[]' THEN 1 ELSE 0 END) AS line_versions FROM ai_cache$statusWhere GROUP BY grouping$having"
         val songs = db.rawQuery("SELECT * FROM ($groups) ORDER BY $sort LIMIT ${TranslationLibraryContract.PAGE_SIZE + 1} OFFSET ${query.offset.coerceAtLeast(0)}", args.toTypedArray()).use { c ->
-            buildList { while (c.moveToNext()) add(TranslationSongEntry(c.str("grouping"), c.str("title"), c.str("artist"), c.num("versions"), c.num("lines"), c.num("favorites"), c.long("updated"), c.str("languages"), c.num("skipped"), c.num("errors"), c.num("translated"))) }
+            buildList { while (c.moveToNext()) add(TranslationSongEntry(c.str("grouping"), c.str("title"), c.str("artist"), c.num("versions"), c.num("lines"), c.num("favorites"), c.long("updated"), c.str("languages"), c.num("skipped"), c.num("errors"), c.num("translated"), c.num("word_versions"), c.num("line_versions"))) }
         }
         val totalSongs = db.rawQuery("SELECT COUNT(*) FROM ($groups)", args.toTypedArray()).use { it.moveToFirst(); it.getInt(0) }
         val stats = db.rawQuery("SELECT COUNT(*), COALESCE(SUM(line_count),0), COALESCE(SUM(favorite),0) FROM ai_cache", null).use { it.moveToFirst(); listOf(it.getInt(0), it.getInt(1), it.getInt(2)) }
@@ -90,6 +91,16 @@ internal class TranslationLibraryStore(private val cache: AiTranslationCache) {
 
     suspend fun favorite(id: String, favorite: Boolean): Int = cache.withDatabase { db ->
         db.update("ai_cache", ContentValues().apply { put("favorite", if (favorite) 1 else 0) }, "song_id = ? AND status = 'translated'", arrayOf(id))
+    }
+
+    suspend fun lineRecordSummary(): TranslationLineRecordSummary = cache.withDatabase { db ->
+        db.rawQuery("SELECT COUNT(*), COALESCE(SUM(favorite), 0) FROM ai_cache WHERE $lineRecords", null).use {
+            it.moveToFirst(); TranslationLineRecordSummary(it.getInt(0), it.getInt(1))
+        }
+    }
+
+    suspend fun deleteAllLineRecords(): Int = cache.withDatabase(invalidate = true) { db ->
+        db.delete("ai_cache", lineRecords, null)
     }
 
     suspend fun delete(ids: List<String>, groups: List<String>, status: String = ""): Int = cache.withDatabase(invalidate = true) { db ->

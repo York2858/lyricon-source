@@ -17,6 +17,8 @@ internal interface TranslationLibraryRepository {
     suspend fun favorite(id: String, value: Boolean)
     suspend fun delete(ids: List<String>, groups: List<String>, status: String = ""): Int
     suspend fun musicLocation(id: String): TranslationMusicLocation = TranslationMusicLocation()
+    suspend fun lineRecordSummary(): TranslationLineRecordSummary = error("当前数据库不支持清理逐行记录，请更新模块并重启系统界面")
+    suspend fun deleteAllLineRecords(): Int = error("当前数据库不支持清理逐行记录，请更新模块并重启系统界面")
 }
 
 internal class SystemTranslationLibrary(private val context: Context) : TranslationLibraryRepository {
@@ -65,4 +67,7 @@ internal class SystemTranslationLibrary(private val context: Context) : Translat
         Bundle().apply { putStringArrayList("ids", ArrayList(ids)); putStringArrayList("groups", ArrayList(groups)); putString("status", status) }).toInt()
     override suspend fun musicLocation(id: String) = json.decodeFromString<TranslationMusicLocation>(
         request(TranslationLibraryContract.MUSIC_LOCATION, Bundle().apply { putString("id", id) }))
+    override suspend fun lineRecordSummary() = json.decodeFromString<TranslationLineRecordSummary>(
+        request(TranslationLibraryContract.LINE_RECORD_SUMMARY, Bundle()))
+    override suspend fun deleteAllLineRecords() = request(TranslationLibraryContract.DELETE_LINE_RECORDS, Bundle()).toInt()
 }

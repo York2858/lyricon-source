@@ -12,6 +12,8 @@ object TranslationLibraryContract {
     const val FAVORITE = 4
     const val DELETE = 5
     const val MUSIC_LOCATION = 6
+    const val LINE_RECORD_SUMMARY = 7
+    const val DELETE_LINE_RECORDS = 8
     const val PAGE_SIZE = 30
     val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 }
@@ -29,6 +31,7 @@ data class TranslationSongEntry(
     val key: String, val title: String, val artist: String, val versions: Int,
     val lines: Int, val favorites: Int, val updatedAt: Long, val languages: String,
     val skipped: Int = 0, val errors: Int = 0, val translated: Int = 0,
+    val wordTimedVersions: Int = 0, val lineTimedVersions: Int = 0,
 )
 
 @Serializable
@@ -51,6 +54,9 @@ data class TranslationVersion(
 
 @Serializable
 data class TranslationVersionPage(val versions: List<TranslationVersion>, val hasMore: Boolean)
+
+@Serializable
+data class TranslationLineRecordSummary(val count: Int, val favorites: Int)
 
 @Serializable
 data class TranslationLine(val index: Int, val original: String = "", val translation: String,

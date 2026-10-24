@@ -12,7 +12,8 @@ internal enum class BatchExportDestination(val label: String) { MUSIC("音乐所
 internal enum class BatchDuplicatePolicy(val label: String) { SKIP("跳过同名文件"), COPY("另存一份"), REPLACE("覆盖已有文件") }
 internal data class BatchExportOptions(val lyrics: TranslationExportOptions = TranslationExportOptions(),
     val destination: BatchExportDestination = BatchExportDestination.ZIP,
-    val duplicates: BatchDuplicatePolicy = BatchDuplicatePolicy.SKIP)
+    val duplicates: BatchDuplicatePolicy = BatchDuplicatePolicy.SKIP,
+    val autoFormat: Boolean = false)
 internal data class BatchExportItem(val song: String, val success: Boolean, val detail: String, val skipped: Boolean = false)
 internal data class BatchExportProgress(val completed: Int, val total: Int, val song: String)
 internal data class BatchExportResult(val items: List<BatchExportItem>, val total: Int, val cancelled: Boolean = false) {
@@ -43,12 +44,17 @@ internal class TranslationBatchExporter(private val context: Context, private va
                 val label = listOf(song.artist, song.title.ifBlank { "未知歌曲" }).filter { it.isNotBlank() }.joinToString(" - ")
                 onProgress(BatchExportProgress(position, songs.size, label))
                 try {
-                    val version = repository.versions(song.key, 0, "translated").versions.firstOrNull() ?: error("这首歌已没有翻译记录")
-                    val text = withContext(Dispatchers.IO) { exportTranslationLyrics(version, readAllLines(version.id), options.lyrics) }
+                    val version = preferredVersion(song.key, shouldStop) ?: error("这首歌已没有翻译记录")
+                    val lyrics = if (options.autoFormat) options.lyrics.copy(format = when {
+                        version.hasWordTiming -> TranslationExportFormat.ENHANCED
+                        version.hasTiming -> TranslationExportFormat.LINE
+                        else -> TranslationExportFormat.TXT
+                    }) else options.lyrics
+                    val text = withContext(Dispatchers.IO) { exportTranslationLyrics(version, readAllLines(version.id), lyrics) }
                     val location = try { repository.musicLocation(version.id) }
                         catch (e: CancellationException) { throw e }
                         catch (_: Exception) { TranslationMusicLocation() }
-                    val name = translationExportFileName(version, options.lyrics, location.audioFileName)
+                    val name = translationExportFileName(version, lyrics, location.audioFileName)
                     val detail = withContext(Dispatchers.IO) {
                         if (zip != null) {
                             val directory = label.map { if (it in "\\/:*?\"<>|" || it.isISOControl()) '_' else it }
@@ -66,7 +72,7 @@ internal class TranslationBatchExporter(private val context: Context, private va
                                 BatchDuplicatePolicy.COPY -> MusicFileWriteMode.COPY
                                 BatchDuplicatePolicy.REPLACE -> if (key in written) MusicFileWriteMode.COPY else MusicFileWriteMode.REPLACE
                             }
-                            when (val saved = folders.write(folder, name, options.lyrics.format.mimeType, text, mode)) {
+                            when (val saved = folders.write(folder, name, lyrics.format.mimeType, text, mode)) {
                                 is MusicFolderWriteResult.Exists -> throw ExistingBatchFile("${folder.name}/${saved.name}")
                                 is MusicFolderWriteResult.Saved -> {
                                     written += key
@@ -77,7 +83,8 @@ internal class TranslationBatchExporter(private val context: Context, private va
                         }
                     }
                     results += BatchExportItem(label, true, detail)
-                } catch (e: CancellationException) { throw e }
+                } catch (_: BatchStopped) { cancelled = true; break }
+                catch (e: CancellationException) { throw e }
                 catch (e: ExistingBatchFile) { results += BatchExportItem(label, false, "已有同名文件：${e.message}", true) }
                 catch (e: Exception) { results += BatchExportItem(label, false, e.message ?: "导出失败") }
                 onProgress(BatchExportProgress(position + 1, songs.size, label))
@@ -85,13 +92,30 @@ internal class TranslationBatchExporter(private val context: Context, private va
             if (zip != null) withContext(Dispatchers.IO) {
                 zip.putNextEntry(ZipEntry("导出报告.txt"))
                 zip.write(buildString {
-                    appendLine("所选 ${songs.size} 首，每首导出最新翻译版本")
+                    appendLine("所选 ${songs.size} 首，优先最新逐字版本，无逐字时选最新逐行版本；无时间轴时选最新版本")
                     if (cancelled) appendLine("已停止，尚未处理的歌曲未导出")
                     results.forEach { appendLine("${if (it.success) "成功" else if (it.skipped) "跳过" else "失败"} | ${it.song} | ${it.detail}") }
                 }.toByteArray(Charsets.UTF_8)); zip.closeEntry()
             }
         } finally { withContext(NonCancellable + Dispatchers.IO) { zip?.close() } }
         return BatchExportResult(results, songs.size, cancelled)
+    }
+    private suspend fun preferredVersion(group: String, shouldStop: () -> Boolean): TranslationVersion? {
+        var offset = 0
+        var preferred: TranslationVersion? = null
+        val priority = compareBy<TranslationVersion> { when { it.hasWordTiming -> 2; it.hasTiming -> 1; else -> 0 } }.thenBy { it.createdAt }
+        do {
+            currentCoroutineContext().ensureActive()
+            if (shouldStop()) throw BatchStopped()
+            val page = repository.versions(group, offset, "translated")
+            for (version in page.versions) {
+                if (version.status == "translated" && (preferred == null || priority.compare(version, preferred) > 0)) preferred = version
+            }
+            if (!page.hasMore) break
+            check(page.versions.isNotEmpty()) { "读取版本进度异常，请重试" }
+            offset += page.versions.size
+        } while (true)
+        return preferred
     }
     private suspend fun readAllLines(id: String): List<TranslationLine> {
         val all = mutableListOf<TranslationLine>(); var offset = 0
@@ -108,4 +132,5 @@ internal class TranslationBatchExporter(private val context: Context, private va
         return candidate
     }
     private class ExistingBatchFile(path: String) : Exception(path)
+    private class BatchStopped : Exception()
 }

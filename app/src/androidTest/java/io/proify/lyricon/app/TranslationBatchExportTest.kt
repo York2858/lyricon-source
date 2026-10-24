@@ -72,6 +72,46 @@ class TranslationBatchExportTest {
         assertTrue(result.items.all { it.detail.contains("目录") })
         assertTrue(folder.listFiles().orEmpty().isEmpty())
     }
+    @Test fun batchPrefersLatestWordVersionAcrossPagesAndAutoFormatKeepsWordTiming() = runBlocking {
+        val base = repository.versions("a", 0, "translated").versions.first()
+        repository.customVersions = (0 until 32).map { base.copy(id = "line$it", createdAt = 1000L - it) } + listOf(
+            base.copy(id = "new-word", hasWordTiming = true, createdAt = 200),
+            base.copy(id = "old-word", hasWordTiming = true, createdAt = 100))
+        val output = File(folder, "preferred.zip")
+        val result = TranslationBatchExporter(context, repository).export(repository.songs.take(1),
+            options(BatchExportDestination.ZIP).copy(autoFormat = true), Uri.fromFile(output), { false }, {})
+        assertEquals(1, result.succeeded)
+        assertEquals(listOf(0, 30), repository.versionOffsets)
+        assertEquals(setOf("new-word"), repository.readIds.toSet())
+        ZipFile(output).use { zip ->
+            val text = zip.getInputStream(zip.getEntry("artist - song a/01. 同名.lrc")).bufferedReader().readText()
+            assertTrue(text.contains("<00:00.400>new-word 0"))
+            assertFalse(text.contains("old-word"))
+        }
+    }
+    @Test fun noWordVersionUsesLatestLineVersionAndExplicitFormatIsRespected() = runBlocking {
+        val base = repository.versions("a", 0, "translated").versions.first()
+        repository.customVersions = listOf(base.copy(id = "plain", createdAt = 500, hasTiming = false),
+            base.copy(id = "latest-line", createdAt = 300), base.copy(id = "older-line", createdAt = 200))
+        val result = TranslationBatchExporter(context, repository).export(repository.songs.take(1),
+            options(BatchExportDestination.FOLDER).copy(autoFormat = true), folderUri, { false }, {})
+        assertEquals(1, result.succeeded)
+        assertEquals(setOf("latest-line"), repository.readIds.toSet())
+        assertTrue(File(folder, "01. 同名.lrc").readText().contains("original latest-line"))
+        repository.customVersions = listOf(base.copy(id = "word", createdAt = 100, hasWordTiming = true))
+        val explicit = options(BatchExportDestination.FOLDER).copy(lyrics = TranslationExportOptions(TranslationExportFormat.TXT))
+        assertEquals(1, TranslationBatchExporter(context, repository).export(repository.songs.take(1), explicit, folderUri, { false }, {}).succeeded)
+        assertTrue(File(folder, "01. 同名.txt").readText().contains("original word"))
+    }
+    @Test fun stoppingWhileScanningVersionPagesDoesNotWriteOrReportAFailure() = runBlocking {
+        val base = repository.versions("a", 0, "translated").versions.first()
+        repository.customVersions = List(31) { base.copy(id = "line$it") }
+        val output = File(folder, "scan-stopped.zip")
+        val result = TranslationBatchExporter(context, repository).export(repository.songs.take(1),
+            options(BatchExportDestination.ZIP), Uri.fromFile(output), { repository.versionOffsets.isNotEmpty() }, {})
+        assertTrue(result.cancelled); assertEquals(0, result.failed); assertTrue(repository.readIds.isEmpty())
+        ZipFile(output).use { assertEquals(1, it.size()); assertNotNull(it.getEntry("导出报告.txt")) }
+    }
     @Test fun systemFolderPickerUsesADocumentInitialUriAndRejectsNonFolderResults() {
         val tree = DocumentsContract.buildTreeDocumentUri("com.android.externalstorage.documents", "primary:Music/新歌")
         val intent = TranslationExportPicker.folderIntent(context, tree)
@@ -85,16 +125,29 @@ class TranslationBatchExportTest {
     }
 
     private class BatchLibrary : TranslationLibraryRepository {
+        var customVersions: List<TranslationVersion>? = null
+        val versionOffsets = mutableListOf<Int>()
+        val readIds = mutableListOf<String>()
         val songs = listOf("a", "b").map { TranslationSongEntry(it, "song $it", "artist", 2, 2, 0, 1, "中文") }
         override suspend fun list(query: TranslationLibraryQuery) = TranslationLibraryPage(songs, false, 2, 4, 4, 0, listOf("中文"))
-        override suspend fun versions(group: String, offset: Int, status: String) = TranslationVersionPage(listOf(
+        override suspend fun versions(group: String, offset: Int, status: String): TranslationVersionPage {
+            customVersions?.let {
+                versionOffsets += offset
+                return TranslationVersionPage(it.drop(offset).take(30), offset + 30 < it.size)
+            }
+            return TranslationVersionPage(listOf(
             TranslationVersion(group, "song $group", "artist", "中文", "fixture", 2, 2, false, true, true),
             TranslationVersion("old", "old", "artist", "中文", "fixture", 1, 2, false, true, true)), false)
+        }
         override suspend fun lines(id: String, offset: Int): TranslationLinePage {
             check(id != "old") { "Must export the latest version" }
+            readIds += id
             val index = if (offset == 0) 0 else 60
             return TranslationLinePage(listOf(TranslationLine(index, "original $id $index", "译文 $id $index",
-                if (id == "bad") null else index * 1000L, if (id == "bad") null else index * 1000L + 900)), if (offset == 0) 60 else null)
+                if (id == "bad") null else index * 1000L, if (id == "bad") null else index * 1000L + 900,
+                if (customVersions?.any { it.id == id && it.hasWordTiming } == true) listOf(
+                    TranslationWord("original ", index * 1000L, index * 1000L + 400),
+                    TranslationWord("$id $index", index * 1000L + 400, index * 1000L + 900)) else emptyList())), if (offset == 0) 60 else null)
         }
         override suspend fun musicLocation(id: String) = TranslationMusicLocation(audioFileName = "01. 同名.flac")
         override suspend fun favorite(id: String, value: Boolean) {}
