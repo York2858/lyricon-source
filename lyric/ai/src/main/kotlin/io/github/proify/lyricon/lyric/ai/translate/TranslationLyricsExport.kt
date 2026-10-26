@@ -39,15 +39,19 @@ fun exportTranslationLyrics(version: TranslationVersion, lines: List<Translation
     require(lines.isNotEmpty()) { "没有可以导出的歌词" }
     val original = options.content != TranslationExportContent.TRANSLATION
     val translated = options.content != TranslationExportContent.ORIGINAL
-    require(!original || lines.all { it.original.isNotBlank() }) { "记录缺少原文，请再次播放歌曲补齐后导出，或选择仅译文" }
+    val cleanLines = lines.map { line ->
+        line.copy(translation = line.translation.takeIf { isUsableLyricTranslation(line.original, it) }.orEmpty())
+    }.filter { original || it.translation.isNotBlank() }
+    require(cleanLines.isNotEmpty()) { "没有有效译文可以导出，请重新播放歌曲获取翻译" }
+    require(!original || cleanLines.all { it.original.isNotBlank() }) { "记录缺少原文，请再次播放歌曲补齐后导出，或选择仅译文" }
     if (options.format == TranslationExportFormat.TXT) {
-        return translationText(version, lines.map { it.copy(original = if (original) it.original else "",
+        return translationText(version, cleanLines.map { it.copy(original = if (original) it.original else "",
             translation = if (translated) it.translation else "") })
     }
-    require(lines.all { it.begin != null && it.end != null && it.begin >= 0 && it.end > it.begin }) {
+    require(cleanLines.all { it.begin != null && it.end != null && it.begin >= 0 && it.end > it.begin }) {
         "记录缺少完整时间轴，请再次播放这首歌补齐后导出"
     }
-    val ordered = lines.sortedWith(compareBy<TranslationLine> { it.begin }.thenBy { it.index })
+    val ordered = cleanLines.sortedWith(compareBy<TranslationLine> { it.begin }.thenBy { it.index })
     return if (options.format == TranslationExportFormat.TTML) ttml(version, ordered, original, translated)
         else lrc(version, ordered, options, original, translated)
 }

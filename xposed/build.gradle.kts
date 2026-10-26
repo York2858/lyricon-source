@@ -43,6 +43,7 @@ configure<LibraryExtension> {
         buildConfig = true
         aidl = true
     }
+    testOptions.unitTests.isReturnDefaultValues = true
 }
 
 dependencies {

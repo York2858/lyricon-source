@@ -55,7 +55,7 @@ object AiTranslator {
     )
 
     private val googleScheduler = AiTranslationScheduler(cache, cacheGeneration, 2, 2,
-        request = { _, options, _, texts -> AiTranslationRequester.requestGoogle(options, texts) }, engine = "google")
+        request = { _, options, song, texts -> AiTranslationRequester.requestGoogle(options, texts, song) }, engine = "google")
 
     suspend fun recordOutcome(song: Song, status: String, reason: TranslationDiagnostic,
         configs: AiConfig? = null, options: AiTranslationOptions = AiTranslationOptions(), resolution: String = "",
@@ -121,6 +121,7 @@ object AiTranslator {
     ): Song {
         val currentLyrics = song.lyrics ?: return song
         val originalLines = currentLyrics.map { it.text?.trim() ?: "" }
+        if (AiTranslationPolicy.requestItems(originalLines, options, song).isEmpty()) return song
         val songContentId = AiTranslationKey.calculate(configs, options, song, originalLines)
 
         cache.getFromMemory(songContentId)?.let {

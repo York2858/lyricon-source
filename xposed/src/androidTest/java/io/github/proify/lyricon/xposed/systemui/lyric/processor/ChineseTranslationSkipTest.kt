@@ -68,4 +68,18 @@ class ChineseTranslationSkipTest {
         assertTrue(isSkipped(listOf("我爱ＡＢＣ")))
         assertTrue(isSkipped(listOf("我们在２０２６年相遇")))
     }
+
+    @Test fun copiedSourceTranslationsDoNotSuppressTranslationButRealTranslationsDo(): Unit = runBlocking {
+        suspend fun configReads(translation: String, extra: List<RichLyricLine> = emptyList()): Int {
+            val probe = ConfigProbe()
+            val source = Song(name = "已有译文验证", lyrics = listOf(
+                RichLyricLine(text = "I gotta go now", translation = translation)) + extra)
+            AiTranslationPostProcessor(probe).process(source, LyricStyle(basicStyle = BasicStyle(
+                isAiTranslationEnable = true, aiTranslationTargetLanguage = "中文")))
+            return probe.reads
+        }
+        assertEquals(1, configReads("I GOTTA GO NOW!"))
+        assertEquals(0, configReads("我现在得走了", listOf(RichLyricLine(text = ""),
+            RichLyricLine(text = "2026"), RichLyricLine(text = "我得走了"))))
+    }
 }

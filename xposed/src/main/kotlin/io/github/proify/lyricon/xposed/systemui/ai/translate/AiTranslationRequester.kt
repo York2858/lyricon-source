@@ -25,18 +25,15 @@ internal object AiTranslationRequester {
         configs: AiConfig,
         options: AiTranslationOptions,
         song: Song? = null,
-        texts: List<String>
+        texts: List<String>,
+        complete: suspend (AiConfig, String, String) -> String = AiTranslationAppClient::complete
     ): List<TranslationItem>? {
         if (configs.apiKey.isNullOrBlank()) {
             Log.e(TAG, "Request aborted: API Key is null or blank.")
             return null
         }
 
-        val requestItems = texts.mapIndexedNotNull { index, text ->
-            text.trim().takeIf(::shouldRequestTranslation)?.let {
-                TranslationRequestItem(index = index, text = it)
-            }
-        }
+        val requestItems = AiTranslationPolicy.requestItems(texts, options, song)
         if (requestItems.isEmpty()) {
             Log.d(TAG, "Request skipped: no translatable lyric lines.")
             return emptyList()
@@ -45,31 +42,24 @@ internal object AiTranslationRequester {
         val payload = json.encodeToString(TranslationRequest(requestItems))
         Log.d(TAG, "Requesting translations, payload: $payload")
 
-        val requestIndices = requestItems.map { it.index }.toSet()
         val systemPrompt = AiTranslationPrompt.build(options, song)
-        val content = AiTranslationAppClient.complete(configs, systemPrompt, payload)
+        val content = complete(configs, systemPrompt, payload)
 
         Log.d(TAG, "Parsing JSON response: $content")
-        val parsed = try { AiTranslationResponseParser.parse(content, requestIndices) }
-        catch (_: Exception) { throw TranslationFailure(TranslationDiagnostic("FORMAT", "AI 返回的内容无法解析为歌词译文", "模型需要返回包含 translated、index、tran 的 JSON 数据；检查模型和自定义提示词。")) }
-        if (parsed.size != requestIndices.size) throw TranslationFailure(TranslationDiagnostic("INCOMPLETE",
-            "AI 返回的译文缺少 ${requestIndices.size - parsed.size} 句", "更换模型或稍后重试；Google 保底开启时会继续补译。"))
-        return parsed
+        return AiTranslationResponseParser.parseValidated(content, requestItems)
     }
 
-    suspend fun requestGoogle(options: AiTranslationOptions, texts: List<String>): List<TranslationItem> {
-        val indexed = texts.mapIndexedNotNull { index, text -> text.trim().takeIf(::shouldRequestTranslation)?.let { index to it } }
+    suspend fun requestGoogle(options: AiTranslationOptions, texts: List<String>, song: Song? = null,
+        translate: suspend (String?, String, List<String>) -> String = AiTranslationAppClient::google): List<TranslationItem> {
+        val indexed = AiTranslationPolicy.requestItems(texts, options, song)
         if (indexed.isEmpty()) return emptyList()
-        val raw = AiTranslationAppClient.google(options.targetLanguage, options.googleBaseUrl, indexed.map { it.second })
+        val raw = translate(options.targetLanguage, options.googleBaseUrl, indexed.map { it.text })
         val rows = try { TranslationLibraryContract.json.decodeFromString<List<String>>(raw) }
         catch (_: Exception) { throw TranslationFailure(TranslationDiagnostic("GOOGLE_FORMAT", "Google 译文格式不正确", "检查 Google 接口地址和网络。")) }
         if (rows.size != indexed.size || rows.any { it.isBlank() }) throw TranslationFailure(TranslationDiagnostic("GOOGLE_ALIGNMENT", "Google 译文与原文行数不一致", "稍后重试或检查接口是否兼容 Google 翻译格式。"))
-        return indexed.mapIndexed { i, item -> TranslationItem(item.first, rows[i]) }
-    }
-
-    /** 只请求包含字母（语言可识别）的行；纯数字/标点/空白行不消耗 API 额度。 */
-    private fun shouldRequestTranslation(text: String): Boolean {
-        if (text.isBlank()) return false
-        return text.any { it.isLetter() }
+        if (indexed.indices.any { !isUsableLyricTranslation(indexed[it].text, rows[it]) })
+            throw TranslationFailure(TranslationDiagnostic("GOOGLE_UNCHANGED", "Google 返回了与原文相同的内容，未产生有效翻译",
+                "检查 Google 接口和目标语言，稍后重试；原文不会作为译文保存。"))
+        return indexed.mapIndexed { i, item -> TranslationItem(item.index, rows[i].trim()) }
     }
 }

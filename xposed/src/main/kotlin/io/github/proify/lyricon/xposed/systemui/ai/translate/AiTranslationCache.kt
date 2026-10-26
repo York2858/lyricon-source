@@ -28,6 +28,7 @@ import io.github.proify.lyricon.lyric.ai.translate.TranslationTiming
 import io.github.proify.lyricon.lyric.ai.translate.TranslationWord
 import io.github.proify.lyricon.lyric.ai.translate.TranslationDiagnostic
 import io.github.proify.lyricon.lyric.ai.translate.TranslationErrors
+import io.github.proify.lyricon.lyric.ai.translate.isUsableLyricTranslation
 
 /** 已完成整首歌翻译的双级缓存：内存 LRU + SQLite 持久化。 */
 internal class AiTranslationCache(
@@ -95,10 +96,17 @@ internal class AiTranslationCache(
         song: Song? = null, lines: List<String> = emptyList(),
         configs: AiConfig? = null, options: AiTranslationOptions? = null,
         expectedGeneration: Int = generation.get(), engine: String = "ai") {
-        val jsonData = json.encodeToString(items)
+        val validItems = items.filter { it.index >= 0 && isUsableLyricTranslation(lines.getOrNull(it.index), it.translation) }
+        if (validItems.isEmpty()) return
+        // Preserve real source translations when only the missing lines were requested.
+        val existing = song?.lyrics.orEmpty().mapIndexedNotNull { index, line ->
+            line.translation?.takeIf { isUsableLyricTranslation(line.text, it) }?.let { TranslationItem(index, it) }
+        }
+        val storedItems = (existing + validItems).distinctBy { it.index }.sortedBy { it.index }
+        val jsonData = json.encodeToString(storedItems)
         dbMutex.withLock {
             if (generation.get() != expectedGeneration) return@withLock
-            memory[key] = items
+            memory[key] = storedItems
             val db = dbHelper?.writableDatabase ?: return@withLock
             runCatching {
                 val values = metadata(song, lines, configs, options).apply {
@@ -106,8 +114,8 @@ internal class AiTranslationCache(
                     put(DatabaseHelper.COLUMN_DATA, jsonData)
                     put(DatabaseHelper.COLUMN_TIMESTAMP, System.currentTimeMillis())
                     put("status", "translated"); put("source", engine)
-                    put("line_count", items.size)
-                    put("search_text", (lines + items.map { it.translation }).joinToString("\n"))
+                    put("line_count", storedItems.size)
+                    put("search_text", (lines + storedItems.map { it.translation }).joinToString("\n"))
                 }
                 // Updating an existing entry must preserve the user's favorite flag.
                 if (db.update(DatabaseHelper.TABLE_NAME, values, "song_id = ?", arrayOf(key)) == 0)

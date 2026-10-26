@@ -37,5 +37,6 @@ data class TranslationItem(
 
 @Serializable
 data class TranslationResponse(
-    val translated: List<TranslationItem>
+    val translated: List<TranslationItem>,
+    val skipped: List<Int> = emptyList()
 )

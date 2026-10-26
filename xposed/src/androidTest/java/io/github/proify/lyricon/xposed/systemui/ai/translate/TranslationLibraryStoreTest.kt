@@ -122,7 +122,7 @@ class TranslationLibraryStoreTest {
         assertTrue(store.list(TranslationLibraryQuery(search = "index")).songs.isEmpty())
         store.favorite("a", true)
         assertTrue(store.list(TranslationLibraryQuery(language = "日语", favoritesOnly = true)).songs.isEmpty())
-        val line = store.lines("a", 0).lines.single()
+        val line = store.lines("a", 0).lines.single { it.translation.isNotBlank() }
         assertEquals("the sea waits", line.original)
         assertEquals(2, line.index)
     }
@@ -141,6 +141,29 @@ class TranslationLibraryStoreTest {
         assertEquals(0, store.list(TranslationLibraryQuery()).totalVersions)
     }
 
+    @Test fun sparseTranslationsAndLegacyCopiesKeepOriginalLinesInLibraryExports() = runBlocking {
+        cache.init(context)
+        val song = Song(name = "混合歌词", lyrics = listOf(
+            RichLyricLine(text = "我得走了", begin = 1000, end = 2000),
+            RichLyricLine(text = "I gotta go now", begin = 3000, end = 4000),
+            RichLyricLine(text = "hello", translation = "你好", begin = 5000, end = 6000)))
+        cache.saveToDb("mixed", listOf(TranslationItem(1, "我现在得走了")), song,
+            song.lyrics!!.map { it.text!! }, options = AiTranslationOptions("中文"))
+        val rows = store.lines("mixed", 0).lines
+        assertEquals(listOf(0, 1, 2), rows.map { it.index })
+        assertEquals(listOf("", "我现在得走了", "你好"), rows.map { it.translation })
+        val group = store.list(TranslationLibraryQuery()).songs.single()
+        val version = store.versions(group.key, 0).versions.single()
+        val exported = exportTranslationLyrics(version, rows, TranslationExportOptions(TranslationExportFormat.LINE))
+        assertEquals(1, Regex("我得走了").findAll(exported).count())
+        assertTrue(exported.contains("I gotta go now"))
+        cache.withDatabase { db -> db.execSQL("UPDATE ai_cache SET translation_json = ? WHERE song_id = 'mixed'",
+            arrayOf("""[{"index":0,"tran":"我得走了"},{"index":1,"tran":"I gotta go now"}]""")) }
+        val legacy = store.lines("mixed", 0).lines
+        assertEquals(3, legacy.size)
+        assertTrue(legacy.all { it.translation.isEmpty() })
+    }
+
     @Test fun oldDatabaseMigratesWithoutLosingTranslationsAndCanEnrichMetadata() = runBlocking {
         context.openOrCreateDatabase(name, Context.MODE_PRIVATE, null).use { db ->
             db.execSQL("CREATE TABLE ai_cache(song_id TEXT PRIMARY KEY,translation_json TEXT,created_at INTEGER)")
@@ -153,7 +176,9 @@ class TranslationLibraryStoreTest {
         assertEquals("旧译文", store.lines("legacy", 0).lines.single().translation)
         cache.enrichMetadata("legacy", Song(name = "找回歌名", artist = "歌手"), listOf("a", "b", "original"), AiConfig(model = "m"), AiTranslationOptions("中文"))
         assertEquals("找回歌名", store.list(TranslationLibraryQuery()).songs.single().title)
-        assertEquals("original", store.lines("legacy", 0).lines.single().original)
+        val enriched = store.lines("legacy", 0).lines
+        assertEquals(listOf("a", "b", "original"), enriched.map { it.original })
+        assertEquals("旧译文", enriched.single { it.index == 2 }.translation)
     }
 
     @Test fun timeRangeUsesLatestSongTimeWithInclusiveStartAndExclusiveEnd() = runBlocking {

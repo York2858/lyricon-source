@@ -77,6 +77,17 @@ data class TranslationLinePage(val lines: List<TranslationLine>, val nextOffset:
 data class TranslationMusicLocation(val folderUri: String = "", val folderName: String = "",
     val audioFileName: String = "", val message: String = "未找到对应的本地音乐，可手动选择文件夹")
 
+/** Include source-only lines so filtering translation requests never removes lyrics from exports. */
+fun translationLibraryLines(originals: List<String>, translations: Map<Int, String>,
+    timing: Map<Int, TranslationTiming>): List<TranslationLine> =
+    (originals.indices + translations.keys).filter { it >= 0 }.distinct().sorted().mapNotNull { index ->
+        val original = originals.getOrElse(index) { "" }
+        val translation = translations[index].orEmpty().takeIf { isUsableLyricTranslation(original, it) }.orEmpty()
+        if (original.isBlank() && translation.isBlank()) return@mapNotNull null
+        val time = timing[index]
+        TranslationLine(index, original, translation, time?.begin, time?.end, time?.words.orEmpty())
+    }
+
 fun translationText(version: TranslationVersion, lines: List<TranslationLine>): String = buildString {
     appendLine(version.title.ifBlank { "未知歌曲（旧记录）" })
     if (version.artist.isNotBlank()) appendLine(version.artist)
@@ -85,7 +96,7 @@ fun translationText(version: TranslationVersion, lines: List<TranslationLine>): 
     appendLine()
     lines.forEach {
         if (it.original.isNotBlank()) appendLine(it.original)
-        appendLine(it.translation)
+        if (isUsableLyricTranslation(it.original, it.translation)) appendLine(it.translation)
         appendLine()
     }
 }.trim()

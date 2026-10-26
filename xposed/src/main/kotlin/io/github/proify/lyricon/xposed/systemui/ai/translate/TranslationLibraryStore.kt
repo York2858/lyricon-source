@@ -72,20 +72,18 @@ internal class TranslationLibraryStore(private val cache: AiTranslationCache) {
             val originals = c.getString(1).takeIf { it.isNotBlank() }?.let { json.decodeFromString<List<String>>(it) }.orEmpty()
             val timing = c.getString(2).takeIf { it.isNotBlank() }
                 ?.let { json.decodeFromString<List<TranslationTiming>>(it).associateBy { row -> row.index } }.orEmpty()
-            val start = offset.coerceIn(0, translations.size)
+            val allLines = translationLibraryLines(originals, translations.associate { it.index to it.translation }, timing)
+            val start = offset.coerceIn(0, allLines.size)
             var bytes = 0
             val rows = buildList {
-                for (item in translations.drop(start).take(60)) {
-                    val time = timing[item.index]
-                    val row = TranslationLine(item.index, originals.getOrElse(item.index) { "" }, item.translation,
-                        time?.begin, time?.end, time?.words.orEmpty())
+                for (row in allLines.drop(start).take(60)) {
                     val size = TranslationLibraryContract.json.encodeToString(row).toByteArray(Charsets.UTF_8).size
                     check(size < 180_000) { "单句内容过长，无法读取" }
                     if (bytes + size > 180_000) break
                     add(row); bytes += size
                 }
             }
-            TranslationLinePage(rows, (start + rows.size).takeIf { it < translations.size })
+            TranslationLinePage(rows, (start + rows.size).takeIf { it < allLines.size })
         }
     }
 

@@ -92,4 +92,38 @@ class TranslationLyricsExportTest {
             assertEquals(translationExportFileName(version, options), translationExportFileName(version, options, missing))
         }
     }
+
+    @Test fun mixedSongKeepsChineseOnceAndOnlyAddsRealTranslationsAcrossFormats() {
+        val chinese = TranslationLine(0, "我得走了", "我得走了", 1000, 2000,
+            listOf(TranslationWord("我得", 1000, 1400), TranslationWord("走了", 1400, 2000)))
+        val english = TranslationLine(1, "I gotta go now", "我现在得走了", 3000, 4000)
+        TranslationExportFormat.entries.forEach { format ->
+            val text = exportTranslationLyrics(version, listOf(chinese, english), TranslationExportOptions(format))
+            val readable = text.replace(Regex("<[^>]*>|\\[\\d+:\\d+\\.\\d+\\]"), "")
+            assertEquals("$format duplicates Chinese", 1, Regex("我得走了").findAll(readable).count())
+            assertTrue("$format missing English", text.contains("I gotta go now"))
+            assertTrue("$format missing translation", text.contains("我现在得走了"))
+        }
+    }
+
+    @Test fun echoedEnglishFromOldCachesIsNeverExportedAsTranslation() {
+        TranslationExportFormat.entries.forEach { format ->
+            val copied = line.copy(translation = " HELLO WORLD! ")
+            val bilingual = export(format, value = copied)
+            assertFalse("$format", bilingual.contains("HELLO WORLD"))
+            if (format == TranslationExportFormat.TTML) assertFalse(bilingual.contains("x-translation"))
+            try { export(format, TranslationExportContent.TRANSLATION, copied); fail("$format should reject copied originals") }
+            catch (e: IllegalArgumentException) { assertTrue(e.message!!.contains("没有有效译文")) }
+        }
+    }
+
+    @Test fun translationOnlyOmitsSourceOnlyRowsBeforeCheckingTheirTiming() {
+        val sourceOnly = TranslationLine(0, "我得走了", "", null, null)
+        TranslationExportFormat.entries.forEach { format ->
+            val text = exportTranslationLyrics(version, listOf(sourceOnly, line),
+                TranslationExportOptions(format, TranslationExportContent.TRANSLATION))
+            assertFalse(text.contains("我得走了"))
+            assertTrue(text.contains("你好世界"))
+        }
+    }
 }

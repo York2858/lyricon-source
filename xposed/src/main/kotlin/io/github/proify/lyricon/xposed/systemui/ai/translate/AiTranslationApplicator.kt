@@ -8,6 +8,7 @@ package io.github.proify.lyricon.xposed.systemui.ai.translate
 
 import android.util.Log
 import io.github.proify.lyricon.lyric.model.Song
+import io.github.proify.lyricon.lyric.ai.translate.isUsableLyricTranslation
 
 /** 把校验后的译文（按行 index）写回 Song 歌词。 */
 internal object AiTranslationApplicator {
@@ -19,9 +20,8 @@ internal object AiTranslationApplicator {
         val newLyrics = song.lyrics?.mapIndexed { index, line ->
             val transText = translationsByIndex[index]?.translation?.trim()
 
-            if (!transText.isNullOrBlank()
-                && line.translation.isNullOrBlank()
-                && transText.lowercase() != line.text?.trim()?.lowercase()
+            if (isUsableLyricTranslation(line.text, transText)
+                && !isUsableLyricTranslation(line.text, line.translation)
             ) {
                 appliedCount++
                 line.copy(translation = transText, translationWords = null)

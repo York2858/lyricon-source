@@ -236,14 +236,17 @@ internal fun TranslationLibraryScreen(state: TranslationLibraryViewModel, onClos
                         Text(listOf(record.language, record.model).filter { it.isNotBlank() }.joinToString(" · "), fontSize = 12.sp, color = colors.onSurfaceVariantSummary)
                     } }
                 } else if (reading) {
-                    val filtered = state.lines.filter { lineSearch.isBlank() || it.original.contains(lineSearch, true) || it.translation.contains(lineSearch, true) }
+                    val filtered = state.lines.filter {
+                        (displayedMode != "只看译文" || it.translation.isNotBlank()) &&
+                            (lineSearch.isBlank() || it.original.contains(lineSearch, true) || it.translation.contains(lineSearch, true))
+                    }
                     items(filtered, key = { it.index }) { line ->
                         Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             SelectionContainer(Modifier.weight(1f)) { Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                                 if (displayedMode != "只看译文" && line.original.isNotBlank()) Text(line.original,
                                     fontSize = if (displayedMode == "只看原文") fontSize.sp else (fontSize - 2).sp, lineHeight = (fontSize * 1.6).sp,
                                     color = if (displayedMode == "只看原文") colors.onSurface else colors.onSurfaceVariantSummary)
-                                if (displayedMode != "只看原文") Text(line.translation, fontSize = fontSize.sp, lineHeight = (fontSize * 1.65).sp)
+                                if (displayedMode != "只看原文" && line.translation.isNotBlank()) Text(line.translation, fontSize = fontSize.sp, lineHeight = (fontSize * 1.65).sp)
                             } }
                             LibraryIconAction("复制第 ${line.index + 1} 句", R.drawable.ic_copy, tint = colors.onSurfaceVariantSummary.copy(alpha = .6f), onClick = {
                                 scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("歌词", listOf(line.original, line.translation).filter { it.isNotBlank() }.joinToString("\n")))); toast("已复制本句") }

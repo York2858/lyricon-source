@@ -34,8 +34,10 @@ signing.properties
 /reports/
 /test-results/
 *.apk
+*.apk.idsig
 *.apks
 *.aab
+/*.zip
 *.hprof
 *.trace
 *.perfetto-trace

@@ -8,6 +8,8 @@ package io.github.proify.lyricon.xposed.systemui.lyric.processor
 
 import android.util.Log
 import io.github.proify.lyricon.lyric.ai.translate.TranslationDiagnostic
+import io.github.proify.lyricon.lyric.ai.translate.isUsableLyricTranslation
+import io.github.proify.lyricon.lyric.ai.translate.shouldTranslateLyric
 import io.github.proify.lyricon.lyric.ai.core.AiConfigProvider
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.lyric.style.LyricStyle
@@ -82,7 +84,7 @@ class AiTranslationPostProcessor(
         if (song.lyrics.isNullOrEmpty()) return skipped("NO_LYRICS", "当时尚未收到歌词，可能正在切歌或匹配", "播放器可能先发送歌曲信息，再发送完整歌词；歌词到达后会自动继续检查，并更新此记录。")
         if (settings.isAiTranslationAutoIgnoreChinese && song.isFullyChinese())
             return skipped("CHINESE", "整首歌词为中文，已按“跳过中文”设置跳过；数字、标点不影响判定", "需要翻译中文歌时，可在 AI 实验室关闭“跳过中文”。")
-        if (isFullyTranslated(song)) return skipped("ALREADY_TRANSLATED", "来源歌词的每一行都已有翻译", "直接使用已有译文，无需再次调用翻译服务。")
+        if (isFullyTranslated(song, translationOptions.targetLanguage)) return skipped("ALREADY_TRANSLATED", "来源歌词中需要翻译的文字行都已有有效译文", "直接使用已有译文，无需再次调用翻译服务。")
         if (song.lyrics.orEmpty().none { line -> line.text.orEmpty().any { it.isLetter() } })
             return skipped("NO_TEXT", "歌词只有空白、数字或标点，没有需要翻译的文字", "等待有实际歌词文字的歌曲，无需修改翻译配置。")
         val translationConfig = configProvider.getActiveConfig()
@@ -121,10 +123,9 @@ class AiTranslationPostProcessor(
     /**
      * 内部辅助：检查歌曲的所有歌词行是否均已填充有效翻译。
      */
-    private fun isFullyTranslated(song: Song): Boolean {
-        return song.lyrics?.all { lyricLine ->
-            !lyricLine.translation.isNullOrBlank()
-        } ?: false
+    private fun isFullyTranslated(song: Song, targetLanguage: String?): Boolean {
+        val lines = song.lyrics.orEmpty().filter { shouldTranslateLyric(it.text.orEmpty(), targetLanguage) }
+        return lines.isNotEmpty() && lines.all { isUsableLyricTranslation(it.text, it.translation) }
     }
 
     /**
