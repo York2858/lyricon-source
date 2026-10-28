@@ -79,7 +79,7 @@ class TranslationLibraryScreenTest {
     }
     private fun more(action: String) {
         compose.onNodeWithContentDescription("更多操作").performClick()
-        compose.onNodeWithText(action).performClick()
+        compose.onAllNodesWithText(action).onLast().performClick()
     }
     private fun filters() { compose.onNodeWithTag("translation-filter-action").performClick() }
     private fun choose(current: String, target: String) {
@@ -92,8 +92,8 @@ class TranslationLibraryScreenTest {
         compose.onNodeWithText("林屿 · 中文").assertIsDisplayed()
         compose.onNodeWithText("逐字").assertIsDisplayed()
         openReading()
-        compose.onNodeWithText("⌄", substring = true).performClick()
-        compose.onNodeWithText("翻译版本").assertIsDisplayed()
+        compose.onNodeWithTag("translation-version-selector").performClick()
+        compose.onAllNodesWithText("翻译版本").onLast().assertIsDisplayed()
         compose.onNodeWithText(" · 当前", substring = true).assertIsDisplayed()
     }
 
@@ -196,6 +196,7 @@ class TranslationLibraryScreenTest {
         more("查找歌词")
         compose.onNode(hasSetTextAction()).performTextInput("译文 124")
         compose.onNode(hasText("译文 124") and hasSetTextAction().not()).assertIsDisplayed()
+        compose.onNodeWithTag("translation-reading-mode").performClick()
         compose.onNodeWithText("原文").performClick()
         compose.onNodeWithText("original 124").assertIsDisplayed()
         compose.onNode(hasText("译文 124") and hasSetTextAction().not()).assertDoesNotExist()
@@ -250,7 +251,7 @@ class TranslationLibraryScreenTest {
 
     @Test fun exportChooserOffersFiveFormatsAndContentChoices() {
         show(); openReading()
-        compose.onNodeWithText("导出").performClick()
+        compose.onNodeWithText("导出歌词").performClick()
         compose.onNodeWithText("增强逐字 LRC").performClick()
         TranslationExportFormat.entries.forEach { compose.onAllNodesWithText(it.label).onLast().assertIsDisplayed() }
         compose.onNodeWithText("逐行 LRC").performClick()
@@ -263,7 +264,7 @@ class TranslationLibraryScreenTest {
     @Test fun exportSelectsFormatBeforeWritingAndFolderHelpIsCollapsed() {
         repository.location = TranslationMusicLocation(audioFileName = "02. 夜航.m4a")
         show(); openReading()
-        compose.onNodeWithText("导出").performClick()
+        compose.onNodeWithText("导出歌词").performClick()
         compose.waitUntil(5000) { !state.locatingMusic && state.musicLocation != null }
         choose("增强逐字 LRC", "逐行 LRC")
         compose.onNodeWithTag("translation-export-options").assertExists()
@@ -297,7 +298,7 @@ class TranslationLibraryScreenTest {
         repository.location = TranslationMusicLocation("content://com.android.externalstorage.documents/tree/primary%3AMusic%2FAlbum",
             "Music/Album", "02. 夜航.m4a", "已识别音乐所在文件夹")
         show(); openReading()
-        compose.onNodeWithText("导出").performClick()
+        compose.onNodeWithText("导出歌词").performClick()
         compose.waitUntil(5000) { !state.locatingMusic && state.musicLocation != null }
         compose.onNodeWithTag("translation-export-options").performScrollToNode(hasText("授权文件夹"))
         compose.onNodeWithText("已识别：Music/Album\n首次保存需授权此文件夹").assertExists()
@@ -541,8 +542,8 @@ class TranslationLibraryScreenTest {
         compose.onNodeWithTag("translation-library-list").performScrollToNode(hasText("夜航"))
         openReading()
         compose.onNodeWithText("original 0").assertExists()
-        compose.onNodeWithText("⌄", substring = true).performClick()
-        compose.onNodeWithText("翻译版本").assertExists()
+        compose.onNodeWithTag("translation-version-selector").performClick()
+        compose.onAllNodesWithText("翻译版本").onLast().assertExists()
         compose.onNodeWithText("关闭").performClick()
         compose.onNodeWithContentDescription("返回").performClick()
         compose.waitUntil(5000) { !state.loading && state.group == null }
@@ -576,6 +577,118 @@ class TranslationLibraryScreenTest {
         compose.waitUntil(5000) { CurrentThemeConfigs.primary == io.github.proify.lyricon.app.compose.theme.appLightColorScheme().primary }
     }
 
+    @Test fun translationBackgroundMatchesTheUnchangedHomepageInEveryTheme() {
+        lateinit var homepage: io.github.proify.lyricon.app.activity.MainActivity
+        compose.runOnUiThread { homepage = io.github.proify.lyricon.app.activity.MainActivity() }
+        listOf(false to false, true to false, false to true).forEach { (dark, monet) ->
+            compose.runOnUiThread {
+                AppThemeUtils.setMode(app, if (dark) AppThemeUtils.MODE_DARK else AppThemeUtils.MODE_LIGHT)
+                AppThemeUtils.setEnableMonet(app, monet)
+                activity.setContent { homepage.MainContent() }
+            }
+            compose.waitUntil(5000) { CurrentThemeConfigs.isDark == dark }
+            compose.waitForIdle()
+            val home = compose.onRoot().captureToImage().asAndroidBitmap()
+            val homeBackground = home.getPixel(1, home.height / 2)
+            show()
+            compose.waitForIdle()
+            val library = compose.onRoot().captureToImage().asAndroidBitmap()
+            assertEquals("Homepage background: dark=$dark monet=$monet", homeBackground,
+                library.getPixel(1, library.height / 2))
+            openReading()
+            compose.onNodeWithTag("translation-reading-mode").assertIsDisplayed()
+            compose.onNodeWithTag("translation-version-selector").assertIsDisplayed()
+            val reader = compose.onRoot().captureToImage().asAndroidBitmap()
+            assertEquals("Reader background: dark=$dark monet=$monet", homeBackground,
+                reader.getPixel(1, reader.height / 2))
+            compose.onNodeWithContentDescription("返回").performClick()
+            compose.waitUntil(5000) { !state.loading && state.group == null }
+        }
+    }
+
+    @Test fun referenceLayoutPreviewKeepsSourceOnlyLinesAndFollowsLiveThemeChanges() {
+        val now = java.time.ZonedDateTime.now().withHour(9).withMinute(28)
+        repository.record = repository.record.copy(title = "我得走了", artist = "顺子", language = "简体中文",
+            createdAt = now.toInstant().toEpochMilli(), lineCount = 3)
+        repository.additionalSongs = listOf(
+            repository.song.copy(key = "second", title = "夜航", artist = "林屿", wordTimedVersions = 0,
+                lineTimedVersions = 1, updatedAt = now.minusMinutes(43).toInstant().toEpochMilli()),
+            repository.song.copy(key = "third", title = "WINDY SUMMER", artist = "杏里", updatedAt = now.minusDays(1).toInstant().toEpochMilli()),
+            repository.song.copy(key = "fourth", title = "晚风", artist = "林屿", wordTimedVersions = 0,
+                lineTimedVersions = 1, updatedAt = now.minusDays(1).minusMinutes(44).toInstant().toEpochMilli()))
+        repository.previewLines = listOf(
+            TranslationLine(0, "The morning light is calling me", "晨光轻轻唤醒我", 0, 2000),
+            TranslationLine(1, "A new day begins from here", "新的一天从这里启程", 2000, 4000),
+            TranslationLine(2, "让风带走昨日的忧愁", "", 4000, 6000))
+        compose.runOnUiThread { state.refresh() }
+        show()
+        screenshot("translation-redesign-library-light")
+        compose.onNodeWithText("我得走了").performClick()
+        compose.waitUntil(5000) { !state.loading && state.version != null }
+        compose.onNodeWithTag("translation-reading-mode").assertIsDisplayed()
+        compose.onNodeWithTag("translation-version-selector").assertIsDisplayed()
+        compose.onNodeWithTag("translation-library-list").performScrollToNode(hasText("让风带走昨日的忧愁"))
+        compose.onAllNodesWithText("让风带走昨日的忧愁").assertCountEquals(1)
+        compose.onNodeWithTag("translation-library-list").performScrollToIndex(0)
+        screenshot("translation-redesign-reader-light")
+        compose.runOnUiThread { AppThemeUtils.setMode(app, AppThemeUtils.MODE_DARK) }
+        compose.waitUntil(5000) { CurrentThemeConfigs.isDark }
+        assertEquals("我得走了", state.version?.title)
+        screenshot("translation-redesign-reader-dark")
+        compose.onNodeWithContentDescription("返回").performClick()
+        compose.waitUntil(5000) { !state.loading && state.group == null }
+        screenshot("translation-redesign-library-dark")
+    }
+
+    @Test fun libraryHeaderFollowsSwipeDirectionWithoutLosingSearchOrSelection() {
+        repository.additionalSongs = List(40) { index -> repository.song.copy(key = "song-$index", title = "示例歌曲 $index") }
+        compose.runOnUiThread { state.refresh() }
+        show()
+        compose.onNode(hasSetTextAction()).performTextInput("夜航")
+        compose.waitUntil(5000) { !state.loading && state.query.search == "夜航" }
+        compose.onNodeWithText("选择").performClick()
+        compose.onNodeWithTag("translation-library-list").performTouchInput { swipeUp() }
+        compose.waitForIdle()
+        compose.onNodeWithTag("translation-collapsible-header").assertDoesNotExist()
+        compose.onNodeWithTag("translation-navigation").assertIsDisplayed()
+        assertEquals("夜航", state.query.search)
+        assertTrue(state.selecting)
+        screenshot("translation-library-header-hidden")
+        compose.onNodeWithTag("translation-library-list").performTouchInput { swipeDown() }
+        compose.waitForIdle()
+        compose.onNodeWithTag("translation-controls").assertIsDisplayed()
+        compose.onNode(hasSetTextAction()).assertTextEquals("夜航")
+        compose.onNodeWithText("完成").assertIsDisplayed()
+    }
+
+    @Test fun readerHeaderFollowsSwipesAndFindRevealsItWithoutDiscardingLyrics() {
+        show(); openReading()
+        compose.onNodeWithTag("translation-library-list").performTouchInput { swipeUp() }
+        compose.waitForIdle()
+        compose.onNodeWithTag("translation-song-summary").assertDoesNotExist()
+        compose.onNodeWithTag("translation-navigation").assertIsDisplayed()
+        compose.onNodeWithTag("translation-library-list").performScrollToNode(hasText("original 100"))
+        compose.onNodeWithTag("translation-song-summary").assertDoesNotExist()
+        screenshot("translation-reader-header-hidden")
+        compose.onNodeWithTag("translation-library-list").performTouchInput { swipeDown() }
+        compose.waitForIdle()
+        compose.onNodeWithTag("translation-reading-mode").assertIsDisplayed()
+        compose.onNodeWithTag("translation-library-list").performTouchInput { swipeUp() }
+        compose.waitForIdle()
+        compose.onNodeWithText("查找歌词").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("translation-reading-mode").assertIsDisplayed()
+        compose.onNode(hasSetTextAction()).performTextInput("译文 124")
+        compose.onNode(hasText("译文 124") and hasSetTextAction().not()).assertIsDisplayed()
+        assertEquals(125, state.lines.size)
+        compose.onNodeWithTag("translation-library-list").performTouchInput { swipeUp() }
+        compose.waitForIdle()
+        compose.onNodeWithTag("translation-song-summary").assertDoesNotExist()
+        compose.onNodeWithTag("translation-library-list").performTouchInput { swipeDown() }
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).assertTextEquals("译文 124")
+    }
+
     private class FixtureLibrary : TranslationLibraryRepository {
         var additionalSongs = emptyList<TranslationSongEntry>()
         var lineSummary = TranslationLineRecordSummary(0, 0)
@@ -590,9 +703,10 @@ class TranslationLibraryScreenTest {
         var lastQuery = TranslationLibraryQuery(); var fail = false; var deleted = 0
         var location = TranslationMusicLocation()
         var locationPending: kotlinx.coroutines.CompletableDeferred<TranslationMusicLocation>? = null
+        var previewLines: List<TranslationLine>? = null
         override suspend fun musicLocation(id: String) = locationPending?.await() ?: location
         var record = TranslationVersion("v1", "夜航", "林屿", "中文", "fixture", 1720000000000, 125, false, true, true, true)
-        val song get() = TranslationSongEntry("song", "夜航", "林屿", 1, 125, if (record.favorite) 1 else 0, record.createdAt, "中文",
+        val song get() = TranslationSongEntry("song", record.title, record.artist, 1, 125, if (record.favorite) 1 else 0, record.createdAt, record.language,
             wordTimedVersions = if (record.hasWordTiming) 1 else 0, lineTimedVersions = if (record.hasTiming && !record.hasWordTiming) 1 else 0)
         override suspend fun list(query: TranslationLibraryQuery): TranslationLibraryPage {
             if (fail) error("数据库暂不可用")
@@ -606,6 +720,7 @@ class TranslationLibraryScreenTest {
         override suspend fun versions(group: String, offset: Int, status: String) = TranslationVersionPage(if (deleted == 0 && (status.isBlank() || status == record.status)) listOf(record) else emptyList(), false)
         override suspend fun lines(id: String, offset: Int): TranslationLinePage {
             if (record.status != "translated") return TranslationLinePage(emptyList(), null)
+            previewLines?.let { return TranslationLinePage(it.drop(offset), null) }
             val end = minOf(offset + 60, 125)
             return TranslationLinePage((offset until end).map {
                 val start = it * 2000L

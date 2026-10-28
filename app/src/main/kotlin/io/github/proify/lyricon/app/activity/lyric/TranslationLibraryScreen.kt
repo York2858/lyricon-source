@@ -15,6 +15,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -22,9 +28,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
@@ -36,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.proify.lyricon.app.ai.translation.*
 import io.github.proify.lyricon.app.R
+import io.github.proify.lyricon.app.compose.MaterialPalette
 import io.github.proify.lyricon.app.util.toast
 import io.github.proify.lyricon.lyric.ai.translate.*
 import kotlinx.coroutines.launch
@@ -49,6 +61,7 @@ import top.yukonga.miuix.kmp.window.WindowDialog
 import java.text.DateFormat
 import java.util.Date
 import java.util.Calendar
+import kotlin.math.abs
 
 private data class LibraryDeletion(val ids: List<String> = emptyList(), val groups: List<String> = emptyList(),
     val count: Int, val favorites: Int, val description: String)
@@ -131,7 +144,7 @@ internal fun TranslationLibraryScreen(state: TranslationLibraryViewModel, onClos
     var lineSearch by rememberSaveable(state.version?.id) { mutableStateOf("") }
     var readingMode by rememberSaveable { mutableStateOf("双语对照") }
     val displayedMode = if (state.version?.hasOriginal == false && readingMode == "只看原文") "只看译文" else readingMode
-    var fontSize by rememberSaveable { mutableIntStateOf(17) }
+    var fontSize by rememberSaveable { mutableIntStateOf(20) }
     LaunchedEffect(state.notice) { state.notice?.let { toast(it); state.clearNotice() } }
 
     var showMore by rememberSaveable { mutableStateOf(false) }
@@ -156,68 +169,124 @@ internal fun TranslationLibraryScreen(state: TranslationLibraryViewModel, onClos
             favorites = rows.sumOf { it.favorites }, description = "所选 ${rows.size} 首歌曲的所有翻译版本")
     }
     val reading = state.version?.status == "translated"
-    Column(Modifier.fillMaxSize().background(colors.surface).statusBarsPadding().navigationBarsPadding().imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    val listKey = state.version?.id ?: state.group?.key ?: "songs"
+    var headerVisible by rememberSaveable(listKey) { mutableStateOf(true) }
+    val headerScrollThreshold = with(LocalDensity.current) { 16.dp.toPx() }
+    val headerScrollConnection = remember(listKey, headerScrollThreshold) {
+        object : NestedScrollConnection {
+            private var directionDistance = 0f
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                // Only direct gestures change the chrome; pagination, searches and fling bounce do not.
+                if (source != NestedScrollSource.UserInput || available.y == 0f) return Offset.Zero
+                if (directionDistance * available.y < 0f) directionDistance = 0f
+                directionDistance += available.y
+                if (abs(directionDistance) >= headerScrollThreshold) {
+                    headerVisible = directionDistance > 0f
+                    directionDistance = 0f
+                }
+                return Offset.Zero // Let the lyrics keep their normal scrolling and position.
+            }
+        }
+    }
+    // Same surface role as the homepage's Miuix Scaffold; AppTheme updates it on theme/wallpaper changes.
+    Column(Modifier.fillMaxSize().background(colors.surface).testTag("translation-page")
+        .statusBarsPadding().navigationBarsPadding().imePadding()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp).testTag("translation-navigation"),
+            verticalAlignment = Alignment.CenterVertically) {
             LibraryIconAction("返回", R.drawable.keyboard_arrow_right_24px, rotation = 180f, onClick = ::back)
-            Text(when { reading -> "双语歌词"; state.version != null -> "处理详情"; state.group != null -> "翻译版本";
-                state.selecting -> "已选 ${state.selected.size} 首"; else -> "翻译库" },
-                fontSize = if (reading) 17.sp else 23.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(start = 4.dp))
-            if (state.group == null) LibraryTextAction(if (state.selecting) "完成" else "选择", enabled = !state.busy,
-                selected = true, onClick = { if (state.selecting) state.endSelection() else state.selecting = true })
+            Row(Modifier.weight(1f).padding(start = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(when { reading -> "双语歌词"; state.version != null -> "处理详情"; state.group != null -> "翻译版本";
+                    state.selecting -> "已选 ${state.selected.size} 首"; else -> "翻译库" },
+                    fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false).alignByBaseline().testTag("translation-page-title"))
+                if (state.group == null && !state.selecting) Text("${state.page?.totalSongs ?: 0} 首", fontSize = 12.sp,
+                    color = colors.onSurfaceVariantSummary, maxLines = 1,
+                    modifier = Modifier.alignByBaseline().testTag("translation-song-count"))
+            }
             if (reading) state.version?.let { version ->
                 LibraryIconAction(if (version.favorite) "已收藏" else "收藏", if (version.favorite) R.drawable.library_star_filled else R.drawable.library_star, enabled = !state.busy,
                     tint = if (version.favorite) colors.primary else colors.onSurfaceVariantSummary, onClick = { state.favorite(version) })
             }
-            LibraryIconAction("更多操作", R.drawable.more_horiz_24px, onClick = { showMore = true })
+            LibraryIconAction("更多操作", R.drawable.library_more, onClick = { showMore = true })
         }
-        if (state.group == null) {
-            LibrarySearch(state.query.search, "搜索歌曲、歌手或歌词") { state.updateQuery(state.query.copy(search = it)) }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                LibraryTab("全部", state.query.status == "translated" && !state.query.favoritesOnly) { state.updateQuery(state.query.copy(status = "translated", favoritesOnly = false)) }
-                LibraryTab("收藏", state.query.status == "translated" && state.query.favoritesOnly) { state.updateQuery(state.query.copy(status = "translated", favoritesOnly = true)) }
-                LibraryTab("跳过", state.query.status == "skipped") { state.updateQuery(state.query.copy(status = "skipped", favoritesOnly = false)) }
-                LibraryTab("报错", state.query.status == "error") { state.updateQuery(state.query.copy(status = "error", favoritesOnly = false)) }
-            }
-            androidx.compose.material3.HorizontalDivider(color = colors.onSurface.copy(alpha = .06f))
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("${state.page?.totalSongs ?: 0} 首歌曲", modifier = Modifier.weight(1f), fontSize = 12.sp, color = colors.onSurfaceVariantSummary)
-                if (state.selecting) LibraryTextAction("全选结果", enabled = !state.busy, selected = true, onClick = state::selectAllResults)
-                else {
-                    val filterCount = listOf(state.query.language.isNotBlank(), state.query.updatedFrom != null || state.query.updatedBefore != null).count { it }
-                    LibraryTextAction(if (filterCount == 0) "筛选" else "筛选 · $filterCount", selected = filterCount > 0,
-                        modifier = Modifier.testTag("translation-filter-action"), onClick = { showTimeFilter = true })
-                    LibraryChoiceMenu(when (state.query.sort) { "oldest" -> "最早翻译"; "title" -> "歌曲名称"; else -> "最近翻译" }, state.query.sort,
-                        listOf("newest" to "最近翻译", "oldest" to "最早翻译", "title" to "歌曲名称"), emphasized = false) { state.updateQuery(state.query.copy(sort = it)) }
+        Spacer(Modifier.height(4.dp))
+        AnimatedVisibility(visible = headerVisible,
+            enter = expandVertically(tween(180)) + fadeIn(tween(120)),
+            exit = shrinkVertically(tween(180)) + fadeOut(tween(100))) {
+            Column(Modifier.fillMaxWidth().testTag("translation-collapsible-header")) {
+                if (state.group == null) {
+                    LibrarySearch(state.query.search, "搜索歌曲、歌手或歌词") { state.updateQuery(state.query.copy(search = it)) }
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainer).testTag("translation-controls")) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                            LibraryTab("全部", state.query.status == "translated" && !state.query.favoritesOnly,
+                                R.drawable.list_24px, MaterialPalette.Purple.Primary, Modifier.weight(1f)) { state.updateQuery(state.query.copy(status = "translated", favoritesOnly = false)) }
+                            LibraryTab("收藏", state.query.status == "translated" && state.query.favoritesOnly,
+                                R.drawable.library_heart, MaterialPalette.Orange.Primary, Modifier.weight(1f)) { state.updateQuery(state.query.copy(status = "translated", favoritesOnly = true)) }
+                            LibraryTab("跳过", state.query.status == "skipped", R.drawable.library_skip, MaterialPalette.Blue.Primary,
+                                Modifier.weight(1f)) { state.updateQuery(state.query.copy(status = "skipped", favoritesOnly = false)) }
+                            LibraryTab("报错", state.query.status == "error", R.drawable.library_alert, MaterialPalette.Teal.Primary,
+                                Modifier.weight(1f)) { state.updateQuery(state.query.copy(status = "error", favoritesOnly = false)) }
+                        }
+                        HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = colors.onSurface.copy(alpha = .06f))
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            LibraryChoiceMenu(when (state.query.sort) { "oldest" -> "最早翻译"; "title" -> "歌曲名称"; else -> "最近翻译" }, state.query.sort,
+                                listOf("newest" to "最近翻译", "oldest" to "最早翻译", "title" to "歌曲名称"), emphasized = false) { state.updateQuery(state.query.copy(sort = it)) }
+                            Spacer(Modifier.weight(1f))
+                            if (state.selecting) LibraryTextAction("全选结果", enabled = !state.busy, selected = true, onClick = state::selectAllResults)
+                            else {
+                                val filterCount = listOf(state.query.language.isNotBlank(), state.query.updatedFrom != null || state.query.updatedBefore != null).count { it }
+                                LibraryTextAction(if (filterCount == 0) "筛选" else "筛选 · $filterCount", selected = filterCount > 0,
+                                    modifier = Modifier.testTag("translation-filter-action"), icon = R.drawable.library_filter, onClick = { showTimeFilter = true })
+                            }
+                            LibraryTextAction(if (state.selecting) "完成" else "选择", enabled = !state.busy, icon = R.drawable.library_select,
+                                onClick = { if (state.selecting) state.endSelection() else state.selecting = true })
+                        }
+                    }
+                    if (state.query.language.isNotBlank() || state.query.updatedFrom != null || state.query.updatedBefore != null) {
+                        Text(listOf(state.query.language.takeIf { it.isNotBlank() },
+                            if (state.query.updatedFrom != null || state.query.updatedBefore != null) libraryTimeRange(state.query) else null).filterNotNull().joinToString(" · "),
+                            fontSize = 12.sp, color = colors.primary, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 4.dp))
+                    }
+                } else if (state.version == null) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                        .background(colors.surfaceContainer).padding(16.dp)) {
+                        Text(state.group!!.title.ifBlank { "未知歌曲（旧记录）" }, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(state.group!!.artist.ifBlank { "歌手未记录" }, fontSize = 14.sp, color = colors.onSurfaceVariantSummary)
+                    }
+                } else {
+                    val version = state.version!!
+                    Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                        .background(colors.surfaceContainer).padding(16.dp).testTag("translation-song-summary"),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        LibraryIconBadge(R.drawable.library_music, MaterialPalette.Teal.Primary)
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(version.title.ifBlank { "未知歌曲（旧记录）" }, fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(listOf(version.artist, version.language.ifBlank { "语言未记录" }).filter { it.isNotBlank() }.joinToString(" · "),
+                                fontSize = 12.sp, color = colors.onSurfaceVariantSummary)
+                        }
+                        if (reading) LibraryTimingBadge(when { version.hasWordTiming -> "逐字"; version.hasTiming -> "逐行"; else -> "未检测" })
+                    }
+                    if (reading) {
+                        Column(Modifier.padding(horizontal = 16.dp, vertical = 16.dp).fillMaxWidth()
+                            .clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainer)) {
+                            LibraryReaderSetting("阅读方式", displayedMode, R.drawable.translate_24px, MaterialPalette.Purple.Primary,
+                                Modifier.testTag("translation-reading-mode")) { showReadingOptions = true }
+                            HorizontalDivider(Modifier.padding(start = 64.dp, end = 16.dp), color = colors.onSurface.copy(alpha = .06f))
+                            LibraryReaderSetting("翻译版本", libraryReaderDate(version.createdAt), R.drawable.library_clock, MaterialPalette.Blue.Primary,
+                                Modifier.testTag("translation-version-selector")) { showVersions = true }
+                        }
+                    }
+                    if (reading && showLineSearch) LibrarySearch(lineSearch, "查找歌词") { lineSearch = it }
                 }
             }
-            if (state.query.language.isNotBlank() || state.query.updatedFrom != null || state.query.updatedBefore != null) {
-                Text(listOf(state.query.language.takeIf { it.isNotBlank() },
-                    if (state.query.updatedFrom != null || state.query.updatedBefore != null) libraryTimeRange(state.query) else null).filterNotNull().joinToString(" · "),
-                    fontSize = 12.sp, color = colors.primary, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 4.dp))
-            }
-        } else if (state.version == null) {
-            Column(Modifier.padding(horizontal = 24.dp, vertical = 12.dp)) {
-                Text(state.group!!.title.ifBlank { "未知歌曲（旧记录）" }, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(state.group!!.artist.ifBlank { "歌手未记录" }, fontSize = 14.sp, color = colors.onSurfaceVariantSummary)
-            }
-        } else {
-            val version = state.version!!
-            Column(Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 10.dp)) {
-                Text(version.title.ifBlank { "未知歌曲（旧记录）" }, fontSize = 27.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(listOf(version.artist, version.language.ifBlank { "语言未记录" }).filter { it.isNotBlank() }.joinToString(" · "),
-                    fontSize = 13.sp, color = colors.onSurfaceVariantSummary, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
-                if (reading) LibraryButton("${when { version.hasWordTiming -> "逐字"; version.hasTiming -> "逐行"; else -> "未检测" }} · ${libraryDate(version.createdAt)} ⌄",
-                    selected = true, onClick = { showVersions = true })
-            }
-            if (reading && showLineSearch) LibrarySearch(lineSearch, "查找歌词") { lineSearch = it }
         }
-        val listKey = state.version?.id ?: state.group?.key ?: "songs"
         pageStates.SaveableStateProvider(listKey) {
             val listState = rememberLazyListState()
             SideEffect { listStates[listKey] = listState }
-            LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("translation-library-list"), state = listState,
-                contentPadding = PaddingValues(horizontal = if (reading) 24.dp else 20.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(if (reading) 8.dp else 0.dp)) {
+            LazyColumn(Modifier.weight(1f).fillMaxWidth().nestedScroll(headerScrollConnection).testTag("translation-library-list"), state = listState,
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = if (reading) 0.dp else 4.dp)) {
                 if (state.version != null && !reading) {
                     val record = state.version!!
                     item { LibraryCard {
@@ -241,16 +310,19 @@ internal fun TranslationLibraryScreen(state: TranslationLibraryViewModel, onClos
                             (lineSearch.isBlank() || it.original.contains(lineSearch, true) || it.translation.contains(lineSearch, true))
                     }
                     items(filtered, key = { it.index }) { line ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            SelectionContainer(Modifier.weight(1f)) { Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        val shape = RoundedCornerShape(topStart = if (line.index == filtered.first().index) 20.dp else 0.dp,
+                            topEnd = if (line.index == filtered.first().index) 20.dp else 0.dp,
+                            bottomStart = if (line.index == filtered.last().index) 20.dp else 0.dp,
+                            bottomEnd = if (line.index == filtered.last().index) 20.dp else 0.dp)
+                        Row(Modifier.fillMaxWidth().clip(shape).background(colors.surfaceContainer).padding(horizontal = 20.dp, vertical = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            SelectionContainer(Modifier.weight(1f)) { Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                                 if (displayedMode != "只看译文" && line.original.isNotBlank()) Text(line.original,
-                                    fontSize = if (displayedMode == "只看原文") fontSize.sp else (fontSize - 2).sp, lineHeight = (fontSize * 1.6).sp,
-                                    color = if (displayedMode == "只看原文") colors.onSurface else colors.onSurfaceVariantSummary)
+                                    fontSize = if (displayedMode == "只看原文" || line.translation.isBlank()) fontSize.sp else (fontSize - 5).coerceAtLeast(12).sp,
+                                    lineHeight = (fontSize * 1.4).sp,
+                                    color = if (displayedMode == "只看原文" || line.translation.isBlank()) colors.onSurface else colors.onSurfaceVariantSummary)
                                 if (displayedMode != "只看原文" && line.translation.isNotBlank()) Text(line.translation, fontSize = fontSize.sp, lineHeight = (fontSize * 1.65).sp)
                             } }
-                            LibraryIconAction("复制第 ${line.index + 1} 句", R.drawable.ic_copy, tint = colors.onSurfaceVariantSummary.copy(alpha = .6f), onClick = {
-                                scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("歌词", listOf(line.original, line.translation).filter { it.isNotBlank() }.joinToString("\n")))); toast("已复制本句") }
-                            })
                         }
                     }
                     if (filtered.isEmpty() && !state.loading && state.error == null) item { LibraryEmpty("没有匹配的歌词", "试试其他原文或译文关键词") }
@@ -279,6 +351,7 @@ internal fun TranslationLibraryScreen(state: TranslationLibraryViewModel, onClos
                         items(songs, key = { it.key }) { song ->
                             LibrarySongRow(song, first = song.key == songs.first().key, last = song.key == songs.last().key,
                                 selecting = state.selecting, selected = song.key in state.selected, diagnostic = state.query.status in setOf("skipped", "error"),
+                                accentIndex = state.songs.indexOf(song),
                                 onClick = { if (state.selecting) state.toggle(song.key) else if (state.query.status in setOf("skipped", "error")) {
                                     directReader = false; state.openSong(song)
                                 } else { directReader = true; state.openSongForReading(song) } },
@@ -307,13 +380,12 @@ internal fun TranslationLibraryScreen(state: TranslationLibraryViewModel, onClos
                     enabled = state.selected.isNotEmpty() && !state.busy && state.query.status !in setOf("skipped", "error"), onClick = ::prepareBatchExport) }
             }
         } else if (reading) {
-            Row(Modifier.fillMaxWidth().background(colors.surfaceContainer).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.weight(1f)) {
-                    listOf("双语对照", "只看译文", "只看原文").forEach { mode -> LibraryTextAction(
-                        when (mode) { "双语对照" -> "双语"; "只看译文" -> "译文"; else -> "原文" }, selected = mode == displayedMode,
-                        enabled = mode != "只看原文" || state.version?.hasOriginal == true, onClick = { readingMode = mode }) }
-                }
-                LibraryButton("导出", tone = LibraryButtonTone.EXPORT, enabled = !state.busy && !state.loading && state.error == null && state.lines.isNotEmpty(), onClick = { showExport = true })
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 16.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                .background(colors.surfaceContainer), verticalAlignment = Alignment.CenterVertically) {
+                LibraryReaderAction("查找歌词", R.drawable.library_search, Modifier.weight(1f)) { headerVisible = true; showLineSearch = !showLineSearch }
+                Box(Modifier.width(1.dp).height(24.dp).background(colors.onSurface.copy(alpha = .06f)))
+                LibraryReaderAction("导出歌词", R.drawable.library_export, Modifier.weight(1f),
+                    enabled = !state.busy && !state.loading && state.error == null && state.lines.isNotEmpty()) { showExport = true }
             }
         }
     }
@@ -325,7 +397,7 @@ internal fun TranslationLibraryScreen(state: TranslationLibraryViewModel, onClos
             LibraryMenuAction("复制全文", R.drawable.ic_copy, enabled = !state.busy) { showMore = false; state.copy { text -> scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("双语歌词", text))) } } }
             LibraryMenuAction("分享", R.drawable.explain_share, enabled = !state.busy) { showMore = false; state.copy(noticeText = "已准备分享内容") { text ->
                 context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }, "分享双语歌词")) } }
-            LibraryMenuAction("查找歌词", R.drawable.list_24px) { showMore = false; showLineSearch = !showLineSearch }
+            LibraryMenuAction("查找歌词", R.drawable.list_24px) { showMore = false; headerVisible = true; showLineSearch = !showLineSearch }
             LibraryMenuAction("阅读设置", R.drawable.ic_format_size) { showMore = false; showReadingOptions = true }
             LibraryMenuAction("版本信息", R.drawable.ic_info) { showMore = false; showVersionInfo = true }
             LibraryMenuAction("删除当前版本", R.drawable.ic_delete, enabled = !state.busy, destructive = true) {
@@ -346,6 +418,12 @@ internal fun TranslationLibraryScreen(state: TranslationLibraryViewModel, onClos
         }
     }
     if (showReadingOptions) LibrarySheet("阅读设置", onDismiss = { showReadingOptions = false }) {
+        LibrarySettingRow("阅读方式") {
+            listOf("双语对照", "只看译文", "只看原文").forEach { mode -> LibraryTextAction(
+                when (mode) { "双语对照" -> "双语"; "只看译文" -> "译文"; else -> "原文" }, selected = mode == displayedMode,
+                enabled = mode != "只看原文" || state.version?.hasOriginal == true,
+                onClick = { readingMode = mode; showReadingOptions = false }) }
+        }
         LibrarySettingRow("字号 · $fontSize") {
             LibraryTextAction("字号 −", enabled = fontSize > 13, onClick = { fontSize-- })
             LibraryTextAction("字号 +", enabled = fontSize < 26, onClick = { fontSize++ })
@@ -631,8 +709,8 @@ private fun LibraryChoiceMenu(label: String, selected: String, choices: List<Pai
 @Composable
 private fun LibrarySearch(value: String, hint: String, onChange: (String) -> Unit) {
     val colors = MiuixTheme.colorScheme
-    Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp))
-        .background(colors.onSurface.copy(alpha = .06f)).padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp))
+        .background(colors.surfaceContainer).padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(painterResource(R.drawable.library_search), null, Modifier.size(19.dp).padding(end = 2.dp), tint = colors.onSurfaceVariantSummary)
         Spacer(Modifier.width(9.dp))
         BasicTextField(value, onChange, singleLine = true, modifier = Modifier.weight(1f).padding(vertical = 6.dp),
@@ -684,3 +762,9 @@ private fun LibraryEmpty(title: String, description: String) {
 }
 
 private fun libraryDate(time: Long): String = if (time <= 0) "时间未记录" else DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(time))
+
+private fun libraryReaderDate(time: Long): String = if (time <= 0) "时间未记录" else {
+    val group = translationLibraryDateGroup(time)
+    if (group == "今天" || group == "昨天") "$group ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(time))}"
+    else DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(time))
+}
