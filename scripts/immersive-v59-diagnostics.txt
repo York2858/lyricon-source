@@ -1,14 +1,14 @@
 请帮助诊断 Android 应用词幕的两个问题：歌词设置点击/滑块没有反应，沉浸歌词没有封面。
 本次只采集证据，不修改代码、不清数据、不重装、不重启系统界面、不调整任何系统权限。不在 MuMu 或其他模拟器上验证。
 
-应用包名 io.github.proify.lyricon；修订版 versionName=1.0.47.rc.1，versionCode=59。系统界面中的模块日志标记为 immersive-v59，设置页面标记 settings-v59。
+应用包名 io.github.proify.lyricon；Neutron 封面修复的实机验证版本为 versionName=1.0.47.rc.1、versionCode=59，后续版本号见 version.properties。系统模块日志标记为 immersive-v59-neutron-3，设置页面标记 settings-v59。immersive-v59、immersive-v59-neutron-1、immersive-v59-neutron-2 或 legacy 均表示运行的还不是这次封面修复，不能只用 APK 版本号判断模块是否重载。
 
 1. 确认实际连接的是实体手机。记录手机型号、Android/系统版本、词幕 versionName/versionCode/lastUpdateTime、SystemUI PID。通过 pm path 获取已安装 APK 并拉取后计算 SHA-256（有 ADB 才做），确认不是旧包。同版本号不足以证明模块已经重载。
 2. 开始采集日志，保留准确开始时间，不清空现有日志。重点标签 ImmersiveSettings、ImmersiveCover、AndroidRuntime，以及包含该应用包名的 WindowManager/InputDispatcher/ActivityTaskManager 错误。ADB 示例：adb -s 实体序列号 logcat -v threadtime -s ImmersiveSettings:I ImmersiveCover:I AndroidRuntime:E。采集过程约一分钟，保留完整异常栈。
 3. 在音乐播放中打开“歌手右侧三个点”。新版应打开独立歌词设置页面，顶部有“返回歌词”，不是底部弹层。分别点击“显示翻译”的文字区域和右侧开关，再拖动“歌词字号”滑块。每次操作记录精确时间、前后显示值、页面是否关闭、是否有按压反馈；每次单独操作并等待一秒。随后暂停音乐重复相同操作。记录哪个操作失败。
 4. 有 ADB 时，每个操作前后分别 uiautomator dump 并拉取 XML，标明点击坐标。尝试 adb -s 实体序列号 shell run-as io.github.proify.lyricon cat shared_prefs/halcyon_lyrics.xml；正式版通常不允许 run-as，失败时原样记录，不能因此认定未保存。不要为读取文件修改权限；已有授权的 root 环境可只读导出该偏好文件，导入字体/图片的个人路径请脱敏。
 5. 封面复现时记录播放器包名、歌名、歌手、播放/暂停状态，拍下播放器通知和沉浸歌词各一张图。采集 dumpsys media_session 中当前播放器对应会话。读取通知 dump 时仅保留当前播放器对应的 NotificationRecord，确认 android.largeIcon、EXTRA_MEDIA_SESSION、标题字段是否存在；不要转发其他应用通知正文。
-6. 封面日志中重点保留：initialize cover-v59、listener registered、scan listener=... active=... cached=...、media package=... icon=...、cached ... bytes=...、client connected module=...、client decoded ...；以及 Cannot attach/registration hook failed/Cannot read/permission denial 的完整栈。module=legacy 表示运行中的系统模块还没有新版标记，不能当作新逻辑已经执行。
+6. 封面日志中重点保留：initialize immersive-v59-neutron-3、listener registered、listener connected、listener resolved source=component、scan listener=... active=... cached=...、media package=... icon=...、cached ... bytes=...、client connected module=...、client decoded ...；以及 Cannot attach/registration hook failed/Cannot read/permission denial 的完整栈。listener resolved 表示从 SystemUI 已有组件恢复了监听器，即使注册回调没有出现也可继续读取。client connected module=immersive-v59-neutron-3 才能证明页面已连到本次修复的模块。逐项注明完全没有出现的日志，不要把系统通知里有图等同于词幕成功接收。
 7. 如手机没有 ADB，但已有 root/Shizuku 日志工具，可用现有工具采集上述标签；无法访问的项目明确写“无法采集”，不要猜测。不要假定 NotificationManager.activeNotifications 可以读取其他应用通知；这条路径在本次代码中已移除，新版从 SystemUI 的 NotificationListenerService 读取。
 
 请返回：环境和安装包信息；按时间排列的操作与前后状态；日志原文件及关键原文；两组截图/XML；仅基于证据的结论。区分“没有收到触摸”“收到触摸但没有设置写入”“写入成功但没有视觉效果”“模块未重载”“监听器/通知/图片/客户端解码失败”。不要只给猜测性建议。

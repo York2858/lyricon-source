@@ -37,6 +37,10 @@ signing.properties
 *.apk.idsig
 *.apks
 *.aab
+*.class
+*.dex
+*.vdex
+*.odex
 /*.zip
 *.hprof
 *.trace
@@ -46,6 +50,7 @@ signing.properties
 
 # Logs, temporary files and editor backups
 *.log
+*.log.*
 *.tmp
 *.temp
 *.swp

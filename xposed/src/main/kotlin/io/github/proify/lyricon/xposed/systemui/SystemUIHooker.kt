@@ -76,7 +76,14 @@ object SystemUIHooker : PackageHooker() {
             return
         }
 
+        // SystemUIApplication can start notification services inside onCreate(). Install
+        // these hooks before proceeding into it so we retain the registered listener.
+        runCatching {
+            io.github.proify.lyricon.xposed.systemui.lyric.ImmersiveNotificationCover.initialize(module, classLoader)
+        }.onFailure { Log.w("ImmersiveCover", "Cannot initialize media notification artwork hooks", it) }
+
         doOnAppCreated {
+            io.github.proify.lyricon.xposed.systemui.lyric.ImmersiveNotificationCover.attach(it)
             if (isAppCreated) {
                 YLog.info(TAG, "App already created, do nothing")
                 return@doOnAppCreated
@@ -144,7 +151,6 @@ object SystemUIHooker : PackageHooker() {
         OplusCapsuleHooker.initialize(module, classLoader)
         StatusBarLyricTouchRouter.initialize(module)
         NotificationCoverHelper.initialize()
-        io.github.proify.lyricon.xposed.systemui.lyric.ImmersiveNotificationCover.initialize(module, classLoader, context)
         ViewVisibilityTracker.initialize(module, classLoader)
         initDataChannel()
 

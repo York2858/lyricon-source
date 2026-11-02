@@ -1,6 +1,6 @@
 沉浸歌词使用与接入说明
 
-59 / 1.0.47.rc.1：三个点打开独立 ImmersiveSettingsActivity，设置界面采用标准 Compose 控件，整行与右侧开关共享同一个事件处理。ImmersiveSettings 日志记录触摸与设置回读。封面从已连接的 SystemUI NotificationListenerService 查询，并写入歌曲封面缓存；不使用只返回调用方通知的 NotificationManager.activeNotifications。客户端仅在图片成功解码后确认封面 key，临时缺图不会清除同曲已显示封面。模块快照包含 immersive-v59 标记。远程排查说明见 scripts/immersive-v59-diagnostics.txt。
+59 / 1.0.47.rc.1：三个点打开独立 ImmersiveSettingsActivity，设置界面采用标准 Compose 控件，整行与右侧开关共享同一个事件处理。ImmersiveSettings 日志记录触摸与设置回读。封面从已连接的 SystemUI NotificationListenerService 查询，并写入歌曲封面缓存；不使用只返回调用方通知的 NotificationManager.activeNotifications。客户端仅在图片成功解码后确认封面 key，临时缺图不会清除同曲已显示封面。Neutron 封面修复在 SystemUIApplication.onCreate 之前安装监听，独立兼容各层继承的通知回调；错过回调时从 SystemUI 已有组件恢复监听器，使用 Application Context 加载图片；支持 getLargeIcon、extras 中的 Icon/Bitmap、旧 largeIcon 字段及硬件位图。模块快照包含 immersive-v59-neutron-3 标记，安装后需重载系统模块才能生效。远程排查说明见 scripts/immersive-v59-diagnostics.txt。
 
 MuMu Android 15 验证：Salt Player 播放本地 Almost Lover.m4a 时，隔离测试包运行 14 个设置的文字区域与右侧开关往返触摸、字号滑块、背景流动、背景选项、字体选项以及返回导航，均通过并核对偏好值。设置恢复深色圆角卡片、蓝色白色圆点开关外观。此验证没有覆盖实体手机上的 Neutron 通知封面完整链路；模拟器原安装签名与本次构建不同，未卸载覆盖原安装。
 

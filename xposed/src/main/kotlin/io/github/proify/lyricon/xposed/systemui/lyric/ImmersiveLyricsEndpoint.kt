@@ -56,7 +56,7 @@ object ImmersiveLyricsEndpoint {
                         playback.state == PlaybackState.STATE_PAUSED && it >= 0
                     } ?: LyricViewController.currentLogicPosition
                     val result = Bundle().apply {
-                        putString("module_build", "immersive-v59")
+                        putString("module_build", ImmersiveNotificationCover.BUILD_ID)
                         putLong("revision", revision)
                         putString("identity", identity)
                         putString("title", meta?.title ?: song?.name)
@@ -76,7 +76,7 @@ object ImmersiveLyricsEndpoint {
                             NotificationCoverHelper.getCachedCoverFile(player, meta?.title ?: it.name.orEmpty(), meta?.artist ?: it.artist.orEmpty())
                         }?.takeIf { it.exists() }
                         val notificationCover = if (cover == null) {
-                            ImmersiveNotificationCover.find(context, player, meta?.title ?: song?.name.orEmpty())
+                            ImmersiveNotificationCover.find(player, meta?.title ?: song?.name.orEmpty())
                         } else null
                         val coverKey = cover?.let(CoverImages::key) ?: notificationCover?.key.orEmpty()
                         result.putString("cover_key", coverKey)
