@@ -1,0 +1,19 @@
+沉浸歌词使用与接入说明
+
+59 / 1.0.47.rc.1：三个点打开独立 ImmersiveSettingsActivity，设置界面采用标准 Compose 控件，整行与右侧开关共享同一个事件处理。ImmersiveSettings 日志记录触摸与设置回读。封面从已连接的 SystemUI NotificationListenerService 查询，并写入歌曲封面缓存；不使用只返回调用方通知的 NotificationManager.activeNotifications。客户端仅在图片成功解码后确认封面 key，临时缺图不会清除同曲已显示封面。模块快照包含 immersive-v59 标记。远程排查说明见 scripts/immersive-v59-diagnostics.txt。
+
+MuMu Android 15 验证：Salt Player 播放本地 Almost Lover.m4a 时，隔离测试包运行 14 个设置的文字区域与右侧开关往返触摸、字号滑块、背景流动、背景选项、字体选项以及返回导航，均通过并核对偏好值。设置恢复深色圆角卡片、蓝色白色圆点开关外观。此验证没有覆盖实体手机上的 Neutron 通知封面完整链路；模拟器原安装签名与本次构建不同，未卸载覆盖原安装。
+
+从词幕首页的「沉浸歌词」进入全屏查看页。先在音乐应用中播放歌曲并启用词幕歌词源。歌手信息右侧的竖向三个点打开歌词显示、样式、背景和字体设置。设置保存在独立的 halcyon_lyrics 偏好文件中。页面不显示收藏按钮、顶部工具栏、播放进度和底部播放控制，通过系统返回手势退出。
+
+歌词渲染移植自 D:\github\Halcyon 的 AppleMusicLyricsView、AppleMusicLyricLine、AppleMusicKaraokeText、ReferenceLyricMotion、AppleMusicInterludes 等原始组件，适配包名、数据、设置入口和点击跳转后的滚动恢复。保留原版逐字羽化、上浮、延音辉光、弹簧位移、非当前行渐隐和模糊、对唱与伴唱、注音、间奏圆点、彩虹、透视和 HDR 效果。字体默认采用原版 Inter Bold 西文与 MiSans Bold 中日韩组合，原文和翻译可分别选择或导入字体。
+
+背景移植原版 AppleCoverFlowBackground、BeautifulLyricsDynamicBackground 和 PlayerCustomBackground；封面模糊保留原版缩放、模糊与遮罩参数，替换依赖音乐库的图像加载入口；另提供静态封面渐变。封面取色算法与流光时钟也来自原版。没有迁入音源管理、歌单、收藏、均衡器、音频输出和账户等无关设置。
+
+实时数据由 SystemUI 中的 ImmersiveLyricsEndpoint 提供，使用已增强、尚未应用状态栏显示转换的歌词，因此可显示 AI 翻译。页面只在前台请求快照，未变化的歌词和封面不会重复传输。Messenger 校验调用 UID，跳转同时校验当前曲目身份。模块更新后需要重启系统界面才能使用新端点。
+
+上下滑动歌词不会改变播放进度，滚动停止后保留八秒阅读位置并保持文字清晰，随后自动恢复跟随。点击歌词跳转并播放默认开启，可在三个点中关闭；点击某句从该句开始播放，暂停时也会恢复播放。跳转收到控制端响应后立即恢复跟随；短暂屏蔽旧进度回传，若播放器三秒内未确认则回到真实进度并提示。切歌或断线会丢弃过期跳转。逐字精确跳转可另行开启。实际 seekTo/play 由当前音乐应用的 MediaSession 响应，未响应时不会伪造持续播放。
+
+逐字高亮依赖来源提供的字词时间轴；源数据提供注音时间轴时传入原版注音渲染器，只有罗马音字符串时按原版算法布局，无法恢复来源未提供的精确注音时间。HDR 取决于设备与系统支持。封面来自通知封面缓存（压缩缩略图），不同封面、设置和歌词数据会改变最终画面。无封面时使用默认取色。页面不提供独立音频播放、歌词文件导入或音源搜索。
+
+来源：D:\github\Halcyon（Apache-2.0）。移植组件位于 immersive/halcyon；保留源组件注释与实现，适配代码独立放置。相关许可随 assets/licenses 打包。

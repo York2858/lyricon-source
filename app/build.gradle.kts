@@ -53,6 +53,7 @@ dependencies {
     implementation(project(":common"))
     implementation(project(":lyric:style"))
     implementation(project(":lyric:view"))
+    implementation(project(":lyric:model"))
     implementation(project(":lyric:ai"))
 
     // --- 第三方 UI 库 ---

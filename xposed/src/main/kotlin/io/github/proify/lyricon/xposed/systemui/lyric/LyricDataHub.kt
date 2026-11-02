@@ -68,6 +68,8 @@ object LyricDataHub : ActivePlayerListener {
     val isWaitingForTrack: Boolean
         get() = pendingPublication || trackProgressGate.waitingForLyrics
 
+    fun immersiveSong(): Song? = if (isWaitingForTrack) null else cachedEnrichedSong
+
     init {
         SystemUIMediaUtils.registerListener(object : SystemUIMediaUtils.MediaControllerCallback {
             override fun onMediaChanged(controller: MediaController, metadata: MediaMetadata) {

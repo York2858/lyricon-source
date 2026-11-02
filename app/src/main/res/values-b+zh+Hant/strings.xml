@@ -290,6 +290,7 @@
     <string name="option_gesture_open_control">開啟控制面板</string>
     <string name="option_gesture_switch_lyric_mode">切換歌詞（狀態列 / 懸浮窗）</string>
     <string name="option_gesture_toggle_lyrics">開關歌詞</string>
+    <string name="option_gesture_open_lyrico_recognition">開啟 Lyrico 懸浮識曲</string>
     <string name="item_lyrics_enabled">顯示歌詞</string>
     <string name="item_lyrics_enabled_summary">同時控制狀態列與懸浮歌詞。使用手勢關閉後，可在此重新開啟。</string>
     <string name="message_lyrics_disabled">歌詞已關閉，可在基礎設定中重新開啟</string>

@@ -588,6 +588,17 @@ class MainActivity : BaseActivity(), LyriconApp.XposedServiceStateListener {
         ) {
             ArrowPreference(
                 startAction = {
+                    ColoredIconBox(Modifier, MaterialPalette.Purple.Primary, R.drawable.ic_music_note)
+                },
+                title = "沉浸歌词",
+                summary = "全屏查看实时逐字歌词、翻译与罗马音",
+                onClick = {
+                    context.startActivity(Intent(context,
+                        io.github.proify.lyricon.app.activity.lyric.immersive.ImmersiveLyricsActivity::class.java))
+                }
+            )
+            ArrowPreference(
+                startAction = {
                     ColoredIconBox(Modifier, MaterialPalette.Teal.Primary, R.drawable.ic_android)
                 },
                 title = stringResource(id = R.string.item_basic_settings),

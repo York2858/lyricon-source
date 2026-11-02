@@ -297,6 +297,7 @@
     <string name="option_gesture_open_control">Open control panel</string>
     <string name="option_gesture_switch_lyric_mode">Switch lyrics (status bar / floating)</string>
     <string name="option_gesture_toggle_lyrics">Toggle lyrics</string>
+    <string name="option_gesture_open_lyrico_recognition">Open Lyrico floating recognition</string>
     <string name="item_lyrics_enabled">Show lyrics</string>
     <string name="item_lyrics_enabled_summary">Controls status bar and floating lyrics. Turn this on to restore lyrics after hiding them with a gesture.</string>
     <string name="message_lyrics_disabled">Lyrics hidden. Restore them in basic settings.</string>

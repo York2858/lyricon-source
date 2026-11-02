@@ -318,6 +318,7 @@
     <string name="option_gesture_open_control">打开控制面板</string>
     <string name="option_gesture_switch_lyric_mode">切换歌词（状态栏 / 悬浮窗）</string>
     <string name="option_gesture_toggle_lyrics">开关歌词</string>
+    <string name="option_gesture_open_lyrico_recognition">打开 Lyrico 悬浮识曲</string>
     <string name="item_lyrics_enabled">显示歌词</string>
     <string name="item_lyrics_enabled_summary">同时控制状态栏和悬浮窗歌词。使用手势关闭后，可在这里重新开启。</string>
     <string name="message_lyrics_disabled">歌词已关闭，可在基础配置中重新开启</string>

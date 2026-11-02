@@ -55,6 +55,13 @@ signing.properties
 /tmp/
 /temp/
 
+# Temporary APK inspection and ADB exports in the repository root
+/META-INF/
+/adb-*.txt
+/immersive-*.xml
+/immersive-*.png
+/halcyon-phone-*.png
+
 # Operating system metadata
 .DS_Store
 Thumbs.db

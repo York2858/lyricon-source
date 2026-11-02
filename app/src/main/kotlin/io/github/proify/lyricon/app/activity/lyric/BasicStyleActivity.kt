@@ -554,7 +554,8 @@ class BasicLyricStyleActivity : AbstractLyricActivity() {
             LyricGesturePrefs.ACTION_NEXT,
             LyricGesturePrefs.ACTION_OPEN_CONTROL,
             LyricGesturePrefs.ACTION_SWITCH_LYRIC_MODE,
-            LyricGesturePrefs.ACTION_TOGGLE_LYRICS
+            LyricGesturePrefs.ACTION_TOGGLE_LYRICS,
+            LyricGesturePrefs.ACTION_OPEN_LYRICO_RECOGNITION
         )
 
         val optionItems = listOf(
@@ -565,6 +566,7 @@ class BasicLyricStyleActivity : AbstractLyricActivity() {
             DropdownItem(title = stringResource(R.string.option_gesture_open_control)),
             DropdownItem(title = stringResource(R.string.option_gesture_switch_lyric_mode)),
             DropdownItem(title = stringResource(R.string.option_gesture_toggle_lyrics)),
+            DropdownItem(title = stringResource(R.string.option_gesture_open_lyrico_recognition)),
         )
 
         val current = preferences.getInt(key, default)

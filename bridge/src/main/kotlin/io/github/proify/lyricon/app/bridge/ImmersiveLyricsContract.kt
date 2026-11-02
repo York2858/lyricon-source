@@ -1,0 +1,11 @@
+package io.github.proify.lyricon.app.bridge
+
+object ImmersiveLyricsContract {
+    const val ROUTE = "immersive_lyrics_endpoint"
+    const val SNAPSHOT = 1
+    const val TOGGLE = 2
+    const val PREVIOUS = 3
+    const val NEXT = 4
+    const val SEEK = 5
+    const val SEEK_AND_PLAY = 6
+}

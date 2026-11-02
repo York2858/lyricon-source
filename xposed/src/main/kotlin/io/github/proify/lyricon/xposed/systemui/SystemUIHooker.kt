@@ -144,6 +144,7 @@ object SystemUIHooker : PackageHooker() {
         OplusCapsuleHooker.initialize(module, classLoader)
         StatusBarLyricTouchRouter.initialize(module)
         NotificationCoverHelper.initialize()
+        io.github.proify.lyricon.xposed.systemui.lyric.ImmersiveNotificationCover.initialize(module, classLoader, context)
         ViewVisibilityTracker.initialize(module, classLoader)
         initDataChannel()
 
@@ -217,6 +218,11 @@ object SystemUIHooker : PackageHooker() {
     private fun initDataChannel() {
         val context = appContext ?: return
         LyriconBridge.routing(context) {
+            onQuery(io.github.proify.lyricon.app.bridge.ImmersiveLyricsContract.ROUTE) {
+                reply(Bundle().apply {
+                    putParcelable("endpoint", io.github.proify.lyricon.xposed.systemui.lyric.ImmersiveLyricsEndpoint.messenger(context))
+                })
+            }
             onQuery(io.github.proify.lyricon.lyric.ai.translate.TranslationLibraryContract.ROUTE) {
                 reply(Bundle().apply { putParcelable("endpoint", AiTranslator.libraryMessenger()) })
             }

@@ -52,9 +52,9 @@ val copyApksAll: TaskProvider<Task> = tasks.register("copyApks") {
 // 建立一个 Set 来记录我们已经创建过哪些 buildType 的 Zip 任务
 val buildTypeZipTasks = mutableSetOf<String>()
 
-// Windows 本机打包时，额外保留一份到下载目录的“项目文件/词幕”。
+// Windows 本机打包时，额外保留一份到当前用户的下载目录。
 val localApkExportDir = if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
-    file("C:/Users/l2858/Downloads/项目文件/词幕")
+    file("${System.getProperty("user.home")}/Downloads/项目文件")
 } else {
     null
 }

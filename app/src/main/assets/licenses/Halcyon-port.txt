@@ -1,0 +1,11 @@
+Immersive lyric rendering adapted from D:\github\Halcyon (Apache-2.0).
+Components: AppleMusicLyricsView, AppleMusicLyricLine, AppleMusicKaraokeText,
+ReferenceLyricMotion, AppleMusicInterludes, BackingVocalFocus, MiniLyricsEdgeFeather,
+PlayerLyricPerspective, AppleCoverFlowBackground, BeautifulLyricsDynamicBackground,
+PlayerCustomBackground, PlayerPalette, PlayerFlowBackground, LyricHdrWindow and LyricLine.
+Changes: Kotlin packages/imports and platform helpers adapted to Lyricon; source lyric
+models and preferences bridged to Lyricon data. Music-library UI and playback features excluded.
+Lyric browsing adds an eight-second reading hold and resumes following after a confirmed seek request.
+AppleCoverFlowBackground retains Halcyon's LunaBeat dynamic-background attribution.
+Bundled fonts copied unchanged from Halcyon: Inter-Bold.ttf, MiSans-Bold.ttf.
+Inter license: Inter-OFL-1.1.txt. Halcyon license: Halcyon-Apache-2.0.txt.

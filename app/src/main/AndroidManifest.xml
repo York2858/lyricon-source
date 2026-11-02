@@ -43,6 +43,16 @@
             android:label="@string/activity_about" />
 
         <activity
+            android:name=".activity.lyric.immersive.ImmersiveLyricsActivity"
+            android:exported="false"
+            android:label="沉浸歌词" />
+
+        <activity
+            android:name=".activity.lyric.immersive.ImmersiveSettingsActivity"
+            android:exported="false"
+            android:label="歌词设置" />
+
+        <activity
             android:name=".activity.SettingsActivity"
             android:label="@string/activity_settings" />
 

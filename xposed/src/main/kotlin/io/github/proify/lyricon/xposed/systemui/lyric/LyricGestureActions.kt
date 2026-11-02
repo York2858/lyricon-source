@@ -34,6 +34,7 @@ internal object LyricGestureActions {
                 LyricGesturePrefs.ACTION_PREVIOUS -> PlaybackControl.previous()
                 LyricGesturePrefs.ACTION_NEXT -> PlaybackControl.next()
                 LyricGesturePrefs.ACTION_OPEN_CONTROL -> LyricControlPopup.show(anchor)
+                LyricGesturePrefs.ACTION_OPEN_LYRICO_RECOGNITION -> LyricoRecognitionLauncher.launch(anchor.context)
                 LyricGesturePrefs.ACTION_SWITCH_LYRIC_MODE -> FloatingLyricController.toggleLyricDisplayMode()
                 LyricGesturePrefs.ACTION_TOGGLE_LYRICS -> anchor.context.sendBroadcast(
                     Intent(AppBridgeConstants.ACTION_TOGGLE_LYRICS)

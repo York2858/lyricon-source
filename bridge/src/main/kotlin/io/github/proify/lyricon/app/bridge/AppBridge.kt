@@ -90,6 +90,7 @@ object AppBridge {
 
         const val ACTION_SWITCH_LYRIC_MODE: Int = 5
         const val ACTION_TOGGLE_LYRICS: Int = 6
+        const val ACTION_OPEN_LYRICO_RECOGNITION: Int = 7
 
         /* ---------- 默认值 ---------- */
 
