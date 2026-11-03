@@ -1,6 +1,7 @@
 package io.github.proify.lyricon.app.bridge
 
 object ImmersiveLyricsContract {
+    const val ACTIVITY_CLASS = "io.github.proify.lyricon.app.activity.lyric.immersive.ImmersiveLyricsActivity"
     const val ROUTE = "immersive_lyrics_endpoint"
     const val SNAPSHOT = 1
     const val TOGGLE = 2

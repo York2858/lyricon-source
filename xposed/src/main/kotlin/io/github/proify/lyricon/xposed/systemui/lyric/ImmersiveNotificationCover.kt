@@ -20,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal object ImmersiveNotificationCover {
-    const val BUILD_ID = "immersive-v59-neutron-3"
+    const val BUILD_ID = "immersive-v59-neutron-4"
     data class Cover(val notificationKey: String, val title: String, val key: String, val bytes: ByteArray)
 
     private val initialized = AtomicBoolean()
@@ -33,6 +33,7 @@ internal object ImmersiveNotificationCover {
 
     fun attach(context: Context) {
         applicationContext = context.applicationContext
+        Log.i("ImmersiveCover", "attach context=${context.javaClass.name} application=${applicationContext?.javaClass?.name}")
     }
 
     fun initialize(module: XposedModule, loader: ClassLoader) {
@@ -59,6 +60,20 @@ internal object ImmersiveNotificationCover {
         }.onFailure {
             Log.w("ImmersiveCover", "Cannot find SystemUI notification listener", it)
         }.getOrNull() ?: NotificationListenerService::class.java
+        listenerClass.declaredConstructors.forEach { constructor ->
+            runCatching {
+                module.hook(constructor).intercept(object : XposedInterface.Hooker {
+                    override fun intercept(chain: XposedInterface.Chain): Any? {
+                        val result = chain.proceed()
+                        (chain.thisObject as? NotificationListenerService)?.let {
+                            activeListener = WeakReference(it)
+                            Log.i("ImmersiveCover", "listener created class=${it.javaClass.name}")
+                        }
+                        return result
+                    }
+                })
+            }.onFailure { Log.w("ImmersiveCover", "Cannot capture listener constructor", it) }
+        }
         generateSequence(listenerClass) { it.superclass }
             .takeWhile { NotificationListenerService::class.java.isAssignableFrom(it) }
             .flatMap { it.declaredMethods.asSequence() }
@@ -118,7 +133,8 @@ internal object ImmersiveNotificationCover {
         // Recover its existing Dagger singleton instead of waiting for another callback.
         val listener = activeListener?.get() ?: ExistingNotificationListenerResolver.resolve(
             applicationContext,
-            NotificationListenerService::class.java
+            NotificationListenerService::class.java,
+            { Log.i("ImmersiveCover", it) }
         )?.also {
             activeListener = WeakReference(it)
             Log.i("ImmersiveCover", "listener resolved source=component class=${it.javaClass.name}")

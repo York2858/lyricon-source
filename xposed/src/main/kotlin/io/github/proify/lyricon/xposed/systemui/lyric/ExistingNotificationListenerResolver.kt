@@ -2,13 +2,14 @@ package io.github.proify.lyricon.xposed.systemui.lyric
 
 /** Resolve the listener already owned by SystemUI, including when registration was missed. */
 internal object ExistingNotificationListenerResolver {
-    fun <T : Any> resolve(application: Any?, listenerType: Class<T>): T? {
+    fun <T : Any> resolve(application: Any?, listenerType: Class<T>, diagnostic: (String) -> Unit = {}): T? {
         if (application == null) return null
         val initializer = field(application, "mInitializer") ?: field(application, "mSystemUIInitializer")
         val component = field(application, "mSysUIComponent")
             ?: call(application, "getSysUIComponent")
             ?: initializer?.let { call(it, "getSysUIComponent") ?: field(it, "mSysUIComponent") }
-            ?: return null
+            ?: run { diagnostic("listener component missing application=${application.javaClass.name}"); return null }
+        diagnostic("listener component class=${component.javaClass.name}")
         val candidates = sequenceOf(
             { call(component, "getNotificationListener") },
             { field(component, "notificationListenerProvider")?.let { call(it, "get") } },

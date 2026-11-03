@@ -62,7 +62,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         fun onTogglePlay()
         fun onNext()
         fun onSeekTo(position: Long)
-        fun onAiExplain(button: View)
+        fun onImmersiveLyrics(button: View)
         fun onMusicTags(button: View)
     }
 
@@ -86,7 +86,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
     private val previousButton: ImageView
     private val playButton: ImageView
     private val nextButton: ImageView
-    private val aiButton: ImageView
+    private val lyricsButton: ImageView
     private val musicTagsButton: ImageView
 
     /** 模块（宿主 App）Resources，用于加载自带图标。 */
@@ -242,15 +242,17 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
             setOnClickListener { v -> actionListener?.onMusicTags(v) }
         }
 
-        aiButton = ImageView(context).apply {
+        lyricsButton = ImageView(context).apply {
             setImageDrawable(
                 moduleRes.getDrawable(
-                    drawableId("sui_control_gemini_ai"),
+                    drawableId("sui_control_immersive_lyrics"),
                     context.theme
                 )
             )
             setOnTouchListener(ControlUi.pressFeedbackListener())
-            setOnClickListener { v -> actionListener?.onAiExplain(v) }
+            contentDescription = "沉浸歌词"
+            tooltipText = contentDescription
+            setOnClickListener { v -> actionListener?.onImmersiveLyrics(v) }
         }
 
         buildInfoRow()
@@ -600,7 +602,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         addActionSlot(row, previousButton)
         addActionSlot(row, playButton)
         addActionSlot(row, nextButton)
-        addActionSlot(row, aiButton, 26.dp)
+        addActionSlot(row, lyricsButton, 26.dp)
 
         card.addView(
             row,

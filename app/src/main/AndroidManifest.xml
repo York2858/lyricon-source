@@ -44,7 +44,7 @@
 
         <activity
             android:name=".activity.lyric.immersive.ImmersiveLyricsActivity"
-            android:exported="false"
+            android:exported="true"
             android:label="沉浸歌词" />
 
         <activity

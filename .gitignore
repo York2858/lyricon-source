@@ -63,6 +63,7 @@ signing.properties
 # Temporary APK inspection and ADB exports in the repository root
 /META-INF/
 /adb-*.txt
+/*-dump.txt
 /immersive-*.xml
 /immersive-*.png
 /halcyon-phone-*.png

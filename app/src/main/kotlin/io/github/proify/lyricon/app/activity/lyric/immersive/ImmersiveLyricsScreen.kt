@@ -5,7 +5,7 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -26,7 +26,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -94,18 +93,15 @@ internal fun ImmersiveLyricsScreen(state: ImmersiveLyricsState) {
             HalcyonBackdrop(state.cover, palette, preferences, state.playing && visible, position)
             Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 28.dp)) {
                 Row(Modifier.fillMaxWidth().padding(top = 28.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = .1f)), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = .1f))
+                        .clickable(onClickLabel = "打开音乐解读") { context.startActivity(state.explanationIntent(context)) }
+                        .semantics { contentDescription = "打开音乐解读" }, contentAlignment = Alignment.Center) {
                         state.cover?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
                             ?: Text("♪", color = palette.onBackground, fontSize = 28.sp)
                     }
                     Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(state.title.ifBlank { "沉浸歌词" }, color = palette.onBackground.copy(alpha = .96f), fontSize = 22.sp,
-                            fontWeight = FontWeight.ExtraBold, fontFamily = originalFont, maxLines = 1, overflow = TextOverflow.Clip,
-                            modifier = Modifier.fillMaxWidth().basicMarquee())
-                        Text(state.artist.ifBlank { "词幕" }, color = palette.onBackground.copy(alpha = .72f), fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold, fontFamily = originalFont, maxLines = 1, modifier = Modifier.fillMaxWidth().basicMarquee())
-                    }
+                    SynchronizedSongHeader(state.title.ifBlank { "沉浸歌词" }, state.artist.ifBlank { "词幕" },
+                        originalFont, palette.onBackground, visible, Modifier.weight(1f))
                     Spacer(Modifier.width(20.dp))
                     IconButton(onClick = {
                         context.startActivity(android.content.Intent(context, ImmersiveSettingsActivity::class.java))
@@ -167,7 +163,7 @@ private fun rememberHalcyonFont(path: String?, weight: Int): FontFamily {
 }
 
 @Composable
-private fun HalcyonBackdrop(cover: Bitmap?, palette: PlayerPalette, preferences: Map<String, *>, playing: Boolean, position: Long) {
+internal fun HalcyonBackdrop(cover: Bitmap?, palette: PlayerPalette, preferences: Map<String, *>, playing: Boolean, position: Long) {
     when (preferences.number("background_mode", 0)) {
         1 -> BeautifulLyricsDynamicBackground(palette, cover, position, playing, animate = playing, modifier = Modifier.fillMaxSize())
         2 -> {

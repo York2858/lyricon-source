@@ -79,7 +79,8 @@ import java.util.Date
 @Composable
 internal fun ExplainScreen(
     state: ExplainViewModel, openHistory: Boolean = false, openQuickPrompts: Boolean = false,
-    album: AlbumExplainViewModel? = null, openAlbum: Boolean = false, onClose: () -> Unit
+    album: AlbumExplainViewModel? = null, openAlbum: Boolean = false,
+    background: (@Composable () -> Unit)? = null, onClose: () -> Unit
 ) {
     var fullscreen by rememberSaveable { mutableStateOf(openHistory || openQuickPrompts || openAlbum) }
     var page by rememberSaveable { mutableStateOf(when {
@@ -125,13 +126,15 @@ internal fun ExplainScreen(
     BackHandler { back() }
     // One composition for both sizes keeps scroll position, streamed Markdown and input intact.
     Box(Modifier.fillMaxSize().imePadding()) {
-        Box(Modifier.fillMaxSize().testTag("explain-scrim").background(Color.Black.copy(alpha = .35f)).clickable(onClick = onClose))
+        background?.invoke()
+        Box(Modifier.fillMaxSize().testTag("explain-scrim")
+            .background(if (background == null) Color.Black.copy(alpha = .35f) else Color.Transparent).clickable(onClick = onClose))
         Column(
             Modifier.align(Alignment.BottomCenter).widthIn(max = 640.dp).fillMaxWidth()
                 .fillMaxHeight(if (fullscreen) 1f else .88f)
                 .clip(RoundedCornerShape(topStart = if (fullscreen) 0.dp else 28.dp,
                     topEnd = if (fullscreen) 0.dp else 28.dp))
-                .background(colors.surface).testTag("explain-sheet")
+                .background(if (background == null) colors.surface else Color.Transparent).testTag("explain-sheet")
                 .pointerInput(Unit) { detectTapGestures(onTap = {}) }.navigationBarsPadding()
                 .then(if (fullscreen) Modifier.statusBarsPadding() else Modifier)
         ) {

@@ -1,6 +1,8 @@
 package io.github.proify.lyricon.app.activity.lyric.immersive
 
 import android.app.Application
+import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Bundle
@@ -18,6 +20,8 @@ import androidx.lifecycle.viewModelScope
 import io.github.proify.lyricon.app.bridge.ImmersiveLyricsContract as Contract
 import io.github.proify.lyricon.app.bridge.LyriconBridge
 import io.github.proify.lyricon.common.PackageNames
+import io.github.proify.lyricon.app.activity.lyric.AiExplainActivity
+import io.github.proify.lyricon.lyric.ai.explain.AiExplainContract
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.lyric.model.RichLyricLine
 import io.github.proify.lyricon.lyric.model.LyricWord
@@ -29,12 +33,14 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlin.coroutines.resume
+import java.io.ByteArrayOutputStream
 
 internal class ImmersiveLyricsState(application: Application) : AndroidViewModel(application) {
     var song by mutableStateOf<Song?>(null); private set
     var cover by mutableStateOf<Bitmap?>(null); private set
     var title by mutableStateOf(""); private set
     var artist by mutableStateOf(""); private set
+    var album by mutableStateOf(""); private set
     var playing by mutableStateOf(false); private set
     var demo by mutableStateOf(false); private set
     var status by mutableStateOf("正在连接词幕…"); private set
@@ -98,6 +104,7 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
                 seekAndPlaySupported = response.getBoolean("seek_and_play")
                 title = response.getString("title").orEmpty()
                 artist = response.getString("artist").orEmpty()
+                album = response.getString("album").orEmpty()
                 duration = maxOf(response.getLong("duration"), updatedSong?.lyrics?.maxOfOrNull { it.end } ?: 0)
                 val now = SystemClock.elapsedRealtime()
                 val remotePosition = response.getLong("position")
@@ -209,6 +216,32 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
 
     fun clearPlaybackError() { playbackError = null }
 
+    fun explanationIntent(context: Context): Intent = Intent(context, AiExplainActivity::class.java)
+        .putExtras(explanationSnapshot())
+        .putExtra(AiExplainActivity.EXTRA_FROM_IMMERSIVE, true)
+
+    fun explanationSnapshot(): Bundle = Bundle().apply {
+        putString(AiExplainContract.EXTRA_TITLE, title)
+        putString(AiExplainContract.EXTRA_ARTIST, artist)
+        putString(AiExplainContract.EXTRA_ALBUM, album)
+        val lines = song?.lyrics.orEmpty()
+        putStringArrayList(AiExplainContract.EXTRA_LINE_TEXTS, ArrayList(lines.map { it.text }))
+        putLongArray(AiExplainContract.EXTRA_LINE_STARTS, lines.map { it.begin }.toLongArray())
+        putLongArray(AiExplainContract.EXTRA_LINE_ENDS, lines.map { it.end }.toLongArray())
+        putLong(AiExplainContract.EXTRA_POSITION, currentPosition())
+        cover?.let { bitmap ->
+            val scale = minOf(1f, 256f / maxOf(bitmap.width, bitmap.height))
+            val thumbnail = Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt().coerceAtLeast(1),
+                (bitmap.height * scale).toInt().coerceAtLeast(1), true)
+            val bytes = ByteArrayOutputStream().use { output ->
+                thumbnail.compress(Bitmap.CompressFormat.JPEG, 85, output)
+                output.toByteArray()
+            }
+            if (thumbnail !== bitmap) thumbnail.recycle()
+            if (bytes.size <= 100_000) putByteArray(AiExplainContract.EXTRA_COVER, bytes)
+        }
+    }
+
     private fun send(action: Int, target: Long = 0) {
         runCatching { remote?.send(Message.obtain(null, action).apply {
             data = Bundle().apply { putString("identity", identity); putLong("position", target) }
@@ -228,6 +261,7 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
             song = immersiveDemoSong()
             title = "词幕 · 沉浸歌词示例"
             artist = "示例预览 · 不播放音频"
+            album = ""
             duration = song!!.duration
             playing = true
         } else {

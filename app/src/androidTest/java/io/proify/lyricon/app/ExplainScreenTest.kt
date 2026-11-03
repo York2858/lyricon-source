@@ -158,6 +158,49 @@ class ExplainScreenTest {
         compose.runOnIdle { assertEquals(1, closeCount) }
     }
 
+    @Test fun lyricBackdropStaysVisibleInSheetAndFullscreen() {
+        val preferences = app.getSharedPreferences("halcyon_lyrics", 0)
+        val previousMode = preferences.all["background_mode"] as? Int
+        val playback = io.github.proify.lyricon.app.activity.lyric.immersive.ImmersiveLyricsState(app)
+        try {
+            preferences.edit().putInt("background_mode", 3).commit()
+            instrumentationSetContent {
+                io.github.proify.lyricon.app.activity.lyric.immersive.ExplanationBackdrop(playback, null, "", "")
+            }
+            val reference = compose.onRoot().captureToImage().asAndroidBitmap()
+            instrumentationSetContent {
+                AppTheme {
+                    ExplainScreen(state, background = {
+                        io.github.proify.lyricon.app.activity.lyric.immersive.ExplanationBackdrop(playback, null, "", "")
+                    }, onClose = { closeCount++ })
+                }
+            }
+            fun checkBackground() {
+                val image = compose.onRoot().captureToImage().asAndroidBitmap()
+                val bounds = compose.onNodeWithTag("explain-sheet").fetchSemanticsNode().boundsInRoot
+                val x = bounds.left.toInt() + 3
+                val y = bounds.center.y.toInt()
+                assertEquals("sheet preserves the lyric backdrop", reference.getPixel(x, y), image.getPixel(x, y))
+                assertEquals("outside area preserves the lyric backdrop", reference.getPixel(image.width / 2, 5), image.getPixel(image.width / 2, 5))
+                image.recycle()
+            }
+            checkBackground()
+            compose.onNodeWithContentDescription("全屏阅读").performClick()
+            checkBackground()
+            screenshot("ai-explain-lyric-background")
+            reference.recycle()
+        } finally {
+            preferences.edit().apply {
+                if (previousMode == null) remove("background_mode") else putInt("background_mode", previousMode)
+            }.commit()
+        }
+    }
+
+    private fun instrumentationSetContent(content: @androidx.compose.runtime.Composable () -> Unit) {
+        InstrumentationRegistry.getInstrumentation().runOnMainSync { activity.setContent(content = content) }
+        compose.waitForIdle()
+    }
+
     @Test fun conciseReadingKeepsSourceInformationInMenu() {
         compose.onNodeWithText("AI 解读仅供参考").assertDoesNotExist()
         compose.onNodeWithContentDescription("更多操作").performClick()

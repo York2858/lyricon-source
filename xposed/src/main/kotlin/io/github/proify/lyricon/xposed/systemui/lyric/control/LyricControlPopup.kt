@@ -7,6 +7,7 @@
 package io.github.proify.lyricon.xposed.systemui.lyric.control
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.os.Handler
@@ -22,7 +23,8 @@ import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.subscriber.ActivePlayerListener
 import io.github.proify.lyricon.subscriber.ProviderInfo
 import io.github.proify.lyricon.xposed.logger.YLog
-import io.github.proify.lyricon.xposed.systemui.ai.explain.AiExplainLauncher
+import io.github.proify.lyricon.xposed.BuildConfig
+import io.github.proify.lyricon.app.bridge.ImmersiveLyricsContract
 import io.github.proify.lyricon.xposed.systemui.lyric.LyricDataHub
 import io.github.proify.lyricon.xposed.systemui.lyric.LyricViewController
 import io.github.proify.lyricon.xposed.systemui.lyric.PlaybackControl
@@ -83,7 +85,7 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
     private var pendingAnchor: WeakReference<View>? = null
 
     /**
-     * 面板交互回调：转发到系统媒体控制器；AI 按钮交给 [AiExplainLauncher]。
+     * 面板交互回调：转发到系统媒体控制器并打开沉浸歌词。
      */
     private val actionListener = object : LyricControlPanel.ActionListener {
         override fun onPrevious() {
@@ -102,10 +104,16 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
             transportControls()?.seekTo(position)
         }
 
-        override fun onAiExplain(button: View) {
-            val anchor = anchorView ?: return
-            AiExplainLauncher.launch(anchor, button, LyricViewController.currentSong)
-            dismiss()
+        override fun onImmersiveLyrics(button: View) {
+            val context = button.context
+            val intent = Intent().setClassName(BuildConfig.APP_PACKAGE_NAME, ImmersiveLyricsContract.ACTIVITY_CLASS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { context.startActivity(intent) }
+                .onSuccess { dismiss() }
+                .onFailure {
+                    YLog.error("LyricControlPopup", "Failed to open immersive lyrics", it)
+                    android.widget.Toast.makeText(context, "无法打开沉浸歌词，请确认词幕已安装", android.widget.Toast.LENGTH_SHORT).show()
+                }
         }
 
         override fun onMusicTags(button: View) {
