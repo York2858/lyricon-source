@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 
@@ -16,11 +17,14 @@ internal fun PlayerCustomBackground(
     uri: String,
     imageAlpha: Float = 1f,
     dimAlpha: Float = 0.26f,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    bitmap: android.graphics.Bitmap? = null
 ) {
     val dim = dimAlpha.coerceIn(0f, 0.8f)
     Box(modifier = modifier.background(Color.Black)) {
-        PlayerCoverImage(
+        if (bitmap != null) androidx.compose.foundation.Image(bitmap.asImageBitmap(), null,
+            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = imageAlpha.coerceIn(.2f, 1f) }, contentScale = ContentScale.Crop)
+        else PlayerCoverImage(
             model = Uri.parse(uri),
             contentDescription = null,
             modifier = Modifier

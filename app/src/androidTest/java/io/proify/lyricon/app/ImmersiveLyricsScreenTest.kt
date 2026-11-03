@@ -101,7 +101,7 @@ class ImmersiveLyricsScreenTest {
             compose.onNodeWithTag("immersive_settings").performTouchInput { swipeUp() }
             compose.mainClock.advanceTimeBy(1000)
             compose.runOnIdle { liveUpdates.value = true }
-            val toggles = listOf("roma" to true, "pronunciation_below" to false, "translation" to true,
+            val toggles = listOf("fullscreen" to false, "roma" to true, "pronunciation_below" to false, "translation" to true,
                 "word_lift" to true, "keep_screen_on" to false, "rainbow" to false, "hdr" to false,
                 "sustain_motion" to true, "perspective" to false, "backing_vocals" to true,
                 "pause_current_only" to true, "click_seek" to true, "word_seek" to false, "touch_feedback" to false)

@@ -89,4 +89,6 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(project(":bridge"))
+    androidTestImplementation(libs.kotlinx.coroutines.android)
 }

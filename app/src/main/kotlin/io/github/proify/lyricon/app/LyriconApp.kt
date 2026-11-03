@@ -26,6 +26,7 @@ class LyriconApp : Application() {
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "LyriconApp created")
+        io.github.proify.lyricon.app.activity.lyric.immersive.halcyon.SettingsManager.getInstance(this)
 
         XposedServiceHelper.registerListener(object : XposedServiceHelper.OnServiceListener {
             override fun onServiceBind(service: XposedService) {

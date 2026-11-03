@@ -9,4 +9,6 @@ object ImmersiveLyricsContract {
     const val NEXT = 4
     const val SEEK = 5
     const val SEEK_AND_PLAY = 6
+    const val OPEN_MUSIC_TAGS = 7
+    const val PREPARE_MUSIC_TAGS = 8
 }

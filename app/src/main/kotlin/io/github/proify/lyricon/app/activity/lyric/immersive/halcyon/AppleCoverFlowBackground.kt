@@ -85,14 +85,13 @@ internal fun AppleCoverFlowBackground(
     isPlaying: Boolean,
     animate: Boolean = true,
     blur: Float = 60f,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    speedOverride: Int? = null
 ) {
     val context = LocalContext.current
     val densityDpi = context.resources.displayMetrics.densityDpi
-    val settingsManager = remember(context) { SettingsManager.getInstance(context) }
-    val speed by settingsManager.playerAppleFlowSpeed.collectAsState(
-        initial = SettingsManager.DEFAULT_PLAYER_APPLE_FLOW_SPEED
-    )
+    val speed = speedOverride ?: remember(context) { SettingsManager.getInstance(context) }.playerAppleFlowSpeed
+        .collectAsState(initial = SettingsManager.DEFAULT_PLAYER_APPLE_FLOW_SPEED).value
 
     // Pre-scale the cover once to a small source; it is drawn into an even smaller frame canvas, so a
     // large source only wastes memory bandwidth.

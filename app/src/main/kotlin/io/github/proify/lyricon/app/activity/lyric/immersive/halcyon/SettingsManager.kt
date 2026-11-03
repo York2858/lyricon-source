@@ -9,8 +9,21 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 internal class SettingsManager private constructor(context: Context) {
     val preferences = context.applicationContext.getSharedPreferences("halcyon_lyrics", Context.MODE_PRIVATE)
     val values = MutableStateFlow(preferences.all.toMap())
-    private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> values.value = preferences.all.toMap() }
-    init { preferences.registerOnSharedPreferenceChangeListener(listener) }
+    private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        values.value = preferences.all.toMap()
+        if (key == null || key in io.github.proify.lyricon.app.bridge.ImmersiveAppearanceContract.KEYS)
+            io.github.proify.lyricon.app.activity.lyric.immersive.ImmersiveAppearanceSync.publish(context, values.value)
+    }
+    init {
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        if (context.applicationContext is io.github.proify.lyricon.app.LyriconApp) {
+            io.github.proify.lyricon.app.LyriconApp.addXposedServiceStateListener(object : io.github.proify.lyricon.app.LyriconApp.XposedServiceStateListener {
+                override fun onServiceStateChanged(service: io.github.libxposed.service.XposedService?) {
+                    if (service != null) io.github.proify.lyricon.app.activity.lyric.immersive.ImmersiveAppearanceSync.publish(context, preferences.all.toMap())
+                }
+            })
+        }
+    }
     fun boolean(key: String, default: Boolean) = values.map { it[key] as? Boolean ?: default }.distinctUntilChanged()
     fun integer(key: String, default: Int) = values.map { (it[key] as? Number)?.toInt() ?: default }.distinctUntilChanged()
     fun set(key: String, value: Boolean) {

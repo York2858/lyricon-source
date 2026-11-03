@@ -1,7 +1,6 @@
 package io.github.proify.lyricon.xposed.systemui.lyric
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.media.session.PlaybackState
 import android.os.Bundle
 import android.os.Handler
@@ -10,11 +9,10 @@ import android.os.Message
 import android.os.Messenger
 import io.github.proify.lyricon.app.bridge.ImmersiveLyricsContract as Contract
 import io.github.proify.lyricon.common.PackageNames
-import io.github.proify.lyricon.common.util.CoverImages
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.xposed.systemui.util.MediaTrackMeta
-import io.github.proify.lyricon.xposed.systemui.util.NotificationCoverHelper
 import io.github.proify.lyricon.xposed.systemui.util.SystemUIMediaUtils
+import io.github.proify.lyricon.xposed.systemui.lyric.control.MusicTagLauncher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,7 +20,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.io.ByteArrayOutputStream
 
 object ImmersiveLyricsEndpoint {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -50,7 +47,8 @@ object ImmersiveLyricsEndpoint {
                         }
                         revision++
                     }
-                    val meta = MediaTrackMeta.resolve(player)
+                    val musicController = SystemUIMediaUtils.getMusicController(player)
+                    val meta = musicController?.metadata?.let(MediaTrackMeta::extract)
                     val playback = SystemUIMediaUtils.getController(player)?.playbackState
                     val position = playback?.position?.takeIf {
                         playback.state == PlaybackState.STATE_PAUSED && it >= 0
@@ -62,6 +60,9 @@ object ImmersiveLyricsEndpoint {
                         putString("title", meta?.title ?: song?.name)
                         putString("artist", meta?.artist ?: song?.artist)
                         putString("album", meta?.album)
+                        putString("player", musicController?.packageName ?: player)
+                        putString("media_id", musicController?.metadata
+                            ?.getString(android.media.MediaMetadata.METADATA_KEY_MEDIA_ID))
                         putLong("duration", meta?.durationMs ?: song?.duration ?: 0)
                         putLong("position", position)
                         putBoolean("playing", LyricViewController.isPlaying && song != null)
@@ -72,29 +73,36 @@ object ImmersiveLyricsEndpoint {
                         }
                     }
                     withContext(Dispatchers.IO) {
-                        val cover = song?.let {
-                            NotificationCoverHelper.getCachedCoverFile(player, meta?.title ?: it.name.orEmpty(), meta?.artist ?: it.artist.orEmpty())
-                        }?.takeIf { it.exists() }
-                        val notificationCover = if (cover == null) {
-                            ImmersiveNotificationCover.find(player, meta?.title ?: song?.name.orEmpty())
-                        } else null
-                        val coverKey = cover?.let(CoverImages::key) ?: notificationCover?.key.orEmpty()
-                        result.putString("cover_key", coverKey)
-                        if (request.getString("cover_key") != coverKey) {
-                            notificationCover?.let { result.putByteArray("cover", it.bytes) }
-                            val bitmap = cover?.let { CoverImages.decode(it, 128) }
-                            if (bitmap != null) try {
-                                result.putByteArray("cover", ByteArrayOutputStream().use {
-                                    bitmap.compress(Bitmap.CompressFormat.JPEG, 85, it)
-                                    it.toByteArray()
-                                })
-                            } finally { bitmap.recycle() }
-                        }
+                        val cover = ImmersiveArtwork.load(musicController?.packageName ?: player, meta?.title ?: song?.name.orEmpty(),
+                            meta?.artist ?: song?.artist.orEmpty(), request.getString("cover_key").orEmpty())
+                        result.putString("cover_key", cover.key)
+                        cover.bytes?.let { result.putByteArray("cover", it) }
                     }
                     val latest = LyricDataHub.immersiveSong()
                     if ("${LyricViewController.activePackage}/${latest?.id}/${latest?.name}/${latest?.artist}" != identity) return@launch
                     runCatching { reply.send(Message.obtain(null, Contract.SNAPSHOT).apply { data = result }) }
                 }
+            } else if (message.what == Contract.PREPARE_MUSIC_TAGS) {
+                scope.launch {
+                    val response = try {
+                        check(request.getString("identity") == identity) { "曲目已变化，请重新点击歌名" }
+                        MusicTagLauncher.prepare(context)
+                    } catch (error: Exception) {
+                        Bundle().apply { putBoolean("accepted", false); putString("error", error.message) }
+                    }
+                    runCatching { reply?.send(Message.obtain(null, Contract.PREPARE_MUSIC_TAGS).apply { data = response }) }
+                }
+            } else if (message.what == Contract.OPEN_MUSIC_TAGS) {
+                val response = Bundle()
+                val failure = runCatching {
+                    check(request.getString("identity") == identity) { "曲目已变化，请重新点击歌名" }
+                    if (request.containsKey("token")) MusicTagLauncher.launchPrepared(context,
+                        request.getString("token").orEmpty(), request.getString("choice_id").orEmpty())
+                    else MusicTagLauncher.launch(context)
+                }.exceptionOrNull()
+                response.putBoolean("accepted", failure == null)
+                if (failure != null) response.putString("error", failure.message)
+                runCatching { reply?.send(Message.obtain(null, Contract.OPEN_MUSIC_TAGS).apply { data = response }) }
             } else if (message.what == Contract.SEEK_AND_PLAY) {
                 val response = Bundle()
                 val controls = SystemUIMediaUtils.getController(player)?.transportControls

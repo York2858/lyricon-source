@@ -47,6 +47,7 @@ configure<LibraryExtension> {
 }
 
 dependencies {
+    implementation(project(":app"))
     implementation(project(":bridge"))
     implementation(project(":common"))
     implementation(project(":lyric:view"))

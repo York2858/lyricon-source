@@ -32,6 +32,18 @@ import io.github.proify.lyricon.xposed.systemui.util.MediaTrackMeta
 import io.github.proify.lyricon.xposed.systemui.util.NotificationCoverHelper
 import io.github.proify.lyricon.xposed.systemui.util.SystemUIMediaUtils
 import java.io.File
+import io.github.proify.lyricon.app.bridge.FavoriteClient
+import io.github.proify.lyricon.app.bridge.FavoriteTrack
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
+import io.github.proify.lyricon.xposed.systemui.lyric.ImmersiveArtwork
+import io.github.proify.lyricon.xposed.ModuleEntry
+import io.github.proify.lyricon.app.bridge.ImmersiveAppearanceContract
 
 /**
  * 状态栏歌词控制窗口 (Status Bar Lyric Control Popup)
@@ -83,6 +95,18 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
     /** 退场动画进行中：防止退出动画期间再次点击歌词创建新的弹窗（重复显示）。 */
     private var dismissing = false
     private var pendingAnchor: WeakReference<View>? = null
+    private val favoriteScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var favoriteJob: Job? = null
+    private var favoriteTrack: FavoriteTrack? = null
+    private var favorite = false
+    private var favoriteWriting = false
+    private var favoriteCheckedAt = 0L
+    private var surfaceJob: Job? = null
+    private var surfaceIdentity = ""
+    private var surfaceCoverKey = ""
+    private var surfaceCheckedAt = 0L
+    private var customBackground: android.graphics.Bitmap? = null
+    private var customVersion = ""
 
     /**
      * 面板交互回调：转发到系统媒体控制器并打开沉浸歌词。
@@ -116,8 +140,31 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
                 }
         }
 
-        override fun onMusicTags(button: View) {
-            MusicTagLauncher.launch(button) { dismiss() }
+        override fun onFavorite(button: View) {
+            val track = currentFavoriteTrack() ?: return
+            if (favoriteWriting) return
+            val target = panel ?: return
+            favoriteJob?.cancel()
+            favoriteWriting = true
+            target.setFavorite(favorite, busy = true)
+            favoriteJob = favoriteScope.launch {
+                try {
+                    val result = FavoriteClient.toggle(button.context, track)
+                    check(result.getBoolean("accepted")) { result.getString("error") ?: "喜爱记录保存失败" }
+                    if (currentFavoriteTrack() == track && panel === target) {
+                        favoriteTrack = track
+                        favorite = result.getBoolean("favorite")
+                        target.setFavorite(favorite)
+                    }
+                } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                    android.widget.Toast.makeText(button.context, error.message ?: "喜爱记录保存失败", android.widget.Toast.LENGTH_LONG).show()
+                } finally {
+                    favoriteWriting = false
+                    favoriteJob = null
+                    refreshFavorite(force = true)
+                }
+            }
         }
     }
 
@@ -140,6 +187,8 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
             val showingPopup = popup ?: return
             if (!showingPopup.isShowing) return
             panel?.updatePosition(LyricViewController.currentLogicPosition)
+            refreshFavorite()
+            if (android.os.SystemClock.elapsedRealtime() - surfaceCheckedAt >= 1000) refreshCover()
             mainHandler.postDelayed(this, UPDATE_INTERVAL_MS)
         }
     }
@@ -356,22 +405,78 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
             position = LyricViewController.currentLogicPosition,
             systemMeta = MediaTrackMeta.resolve(LyricViewController.activePackage)
         )
+        refreshFavorite(force = true)
+        refreshCover()
+    }
+
+    private fun currentFavoriteTrack(): FavoriteTrack? {
+        val controller = SystemUIMediaUtils.getMusicController(LyricViewController.activePackage)
+        val player = controller?.packageName ?: LyricViewController.activePackage
+        val metadata = controller?.metadata
+        val meta = metadata?.let(MediaTrackMeta::extract)
+        val song = LyricViewController.currentSong
+        return FavoriteTrack(player, metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID).orEmpty(),
+            meta?.title ?: song?.name.orEmpty(), meta?.artist ?: song?.artist.orEmpty(), meta?.album.orEmpty(),
+            meta?.durationMs ?: song?.duration ?: 0).takeIf { it.player.isNotBlank() && it.title.isNotBlank() }
+    }
+
+    private fun refreshFavorite(force: Boolean = false) {
+        val target = panel ?: return
+        val track = currentFavoriteTrack()
+        if (track == null) { target.setFavorite(false, available = false); return }
+        if (favoriteWriting) return
+        val changed = track != favoriteTrack
+        if (!changed && !force && android.os.SystemClock.elapsedRealtime() - favoriteCheckedAt < 5000) return
+        if (favoriteJob?.isActive == true && !changed) return
+        favoriteJob?.cancel()
+        favoriteTrack = track
+        if (changed) favorite = false
+        target.setFavorite(favorite)
+        favoriteCheckedAt = android.os.SystemClock.elapsedRealtime()
+        favoriteJob = favoriteScope.launch {
+            val result = runCatching { FavoriteClient.request(target.context, track) }.getOrNull()
+            if (currentFavoriteTrack() == track && panel === target && result?.getBoolean("accepted") == true) {
+                favorite = result.getBoolean("favorite")
+                target.setFavorite(favorite)
+            }
+        }
     }
 
     /** 从当前活跃播放器的封面缓存加载图片，并刷新面板封面与背景取色。 */
     private fun refreshCover() {
-        val pkg = LyricViewController.activePackage
-        if (pkg.isBlank()) return
-        val file = NotificationCoverHelper.getLatestCoverFile(pkg) ?: return
-        if (!file.exists()) return
-        try {
-            val bitmap = CoverBackdrop.decode(file) ?: return
-            panel?.apply {
-                setCover(bitmap)
-                setBackdropColor(CoverBackdrop.backdropColor(bitmap))
+        val target = panel ?: return
+        val track = currentFavoriteTrack()
+        val identity = track?.let { "${it.player}/${it.title}/${it.artist}" }.orEmpty()
+        if (identity != surfaceIdentity) {
+            surfaceJob?.cancel(); surfaceIdentity = identity; surfaceCoverKey = ""; target.setCover(null)
+        }
+        if (surfaceJob?.isActive == true) return
+        surfaceCheckedAt = android.os.SystemClock.elapsedRealtime()
+        val knownKey = surfaceCoverKey
+        surfaceJob = favoriteScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val cover = track?.let { ImmersiveArtwork.load(it.player, it.title, it.artist, knownKey) } ?: ImmersiveArtwork.Cover("")
+                    val bitmap = cover.bytes?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
+                    val preferences = runCatching { ModuleEntry.instance.getRemotePreferences(ImmersiveAppearanceContract.PREFERENCES).all.toMap() }
+                        .getOrDefault(emptyMap<String, Any>())
+                    val version = preferences[ImmersiveAppearanceContract.CUSTOM_VERSION] as? String ?: ""
+                    val custom = if (version == customVersion) customBackground else if (version.isBlank()) null else runCatching {
+                        android.os.ParcelFileDescriptor.AutoCloseInputStream(ModuleEntry.instance.openRemoteFile(ImmersiveAppearanceContract.CUSTOM_FILE)).use {
+                            android.graphics.BitmapFactory.decodeStream(it)
+                        }
+                    }.getOrNull()
+                    Triple(cover to bitmap, preferences, version to custom)
+                }
+                if (panel !== target || surfaceIdentity != identity) return@launch
+                val (cover, bitmap) = result.first
+                if (cover.key != knownKey || bitmap != null) { target.setCover(bitmap); surfaceCoverKey = cover.key }
+                customVersion = result.third.first; customBackground = result.third.second
+                target.setAppearance(result.second, customBackground)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                YLog.error(TAG, "Failed to refresh media artwork", error)
             }
-        } catch (e: Exception) {
-            YLog.error(TAG, "Failed to load cover for $pkg", e)
         }
     }
 
@@ -396,6 +501,8 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
 
     /** 弹窗被系统/外部关闭后的资源回收。 */
     private fun cleanup() {
+        surfaceJob?.cancel(); surfaceJob = null; surfaceIdentity = ""; surfaceCoverKey = ""; surfaceCheckedAt = 0
+        customBackground = null; customVersion = ""
         val queuedAnchor = pendingAnchor?.get()
         pendingAnchor = null
         LyricDataHub.removeListener(this)

@@ -19,6 +19,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.proify.lyricon.app.bridge.ImmersiveLyricsContract as Contract
 import io.github.proify.lyricon.app.bridge.LyriconBridge
+import io.github.proify.lyricon.app.bridge.FavoriteClient
+import io.github.proify.lyricon.app.bridge.FavoriteTrack
 import io.github.proify.lyricon.common.PackageNames
 import io.github.proify.lyricon.app.activity.lyric.AiExplainActivity
 import io.github.proify.lyricon.lyric.ai.explain.AiExplainContract
@@ -41,6 +43,16 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
     var title by mutableStateOf(""); private set
     var artist by mutableStateOf(""); private set
     var album by mutableStateOf(""); private set
+    var favorite by mutableStateOf(false); private set
+    var favoriteBusy by mutableStateOf(false); private set
+    var musicTagChoices by mutableStateOf<List<SongVersionChoice>>(emptyList()); private set
+    var musicTagsBusy by mutableStateOf(false); private set
+    private var musicTagToken = ""
+    private var musicTagIdentity = ""
+    private var favoriteTrack: FavoriteTrack? = null
+    private var favoriteQuery: kotlinx.coroutines.Job? = null
+    private var favoriteCheckedAt = 0L
+    val canFavorite: Boolean get() = favoriteTrack != null && !demo
     var playing by mutableStateOf(false); private set
     var demo by mutableStateOf(false); private set
     var status by mutableStateOf("正在连接词幕…"); private set
@@ -63,6 +75,7 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
     } else 0).coerceIn(0, duration.coerceAtLeast(0))
 
     suspend fun observe() {
+        favoriteCheckedAt = 0L
         while (true) {
             if (demo) {
                 if (currentPosition() >= duration) seek(0)
@@ -79,6 +92,8 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
             if (response == null) {
                 remote = null
                 identity = ""
+                favoriteTrack = null
+                favorite = false
                 seekGeneration++
                 pendingSeek = null
                 seekAndPlaySupported = false
@@ -98,6 +113,7 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
                 if (demo) continue
                 if (revision == -1L) android.util.Log.i("ImmersiveCover", "client connected module=${response.getString("module_build") ?: "legacy"}")
                 val trackChanged = identity != response.getString("identity").orEmpty()
+                if (trackChanged) dismissMusicTagChoices()
                 song = updatedSong
                 revision = response.getLong("revision")
                 identity = response.getString("identity").orEmpty()
@@ -106,6 +122,15 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
                 artist = response.getString("artist").orEmpty()
                 album = response.getString("album").orEmpty()
                 duration = maxOf(response.getLong("duration"), updatedSong?.lyrics?.maxOfOrNull { it.end } ?: 0)
+                val track = FavoriteTrack(response.getString("player").orEmpty(), response.getString("media_id").orEmpty(),
+                    title, artist, album, response.getLong("duration"))
+                    .takeIf { it.player.isNotBlank() && it.title.isNotBlank() }
+                val favoriteChanged = track != favoriteTrack
+                if (favoriteChanged) { favoriteTrack = track; favorite = false }
+                if (!favoriteBusy && (favoriteChanged || SystemClock.elapsedRealtime() - favoriteCheckedAt > 5000)) {
+                    favoriteCheckedAt = SystemClock.elapsedRealtime()
+                    refreshFavorite(track)
+                }
                 val now = SystemClock.elapsedRealtime()
                 val remotePosition = response.getLong("position")
                 val remotePlaying = response.getBoolean("playing")
@@ -144,7 +169,7 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
         putString("cover_key", coverKey)
     })
 
-    private suspend fun request(action: Int, payload: Bundle): Bundle? = withTimeoutOrNull(2000) {
+    private suspend fun request(action: Int, payload: Bundle, timeout: Long = 2000): Bundle? = withTimeoutOrNull(timeout) {
         suspendCancellableCoroutine { continuation ->
             val reply = Messenger(Handler(Looper.getMainLooper()) { message ->
                 if (continuation.isActive) continuation.resume(message.data)
@@ -215,6 +240,95 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
     }
 
     fun clearPlaybackError() { playbackError = null }
+
+    private fun refreshFavorite(track: FavoriteTrack?) {
+        favoriteQuery?.cancel()
+        if (track == null) return
+        favoriteQuery = viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { FavoriteClient.request(getApplication(), track) }.getOrNull()
+            }
+            if (favoriteTrack == track && !favoriteBusy && result?.getBoolean("accepted") == true) {
+                favorite = result.getBoolean("favorite")
+            }
+        }
+    }
+
+    fun toggleFavorite() {
+        val track = favoriteTrack ?: return
+        if (favoriteBusy || demo) return
+        favoriteQuery?.cancel()
+        favoriteBusy = true
+        viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    FavoriteClient.toggle(getApplication(), track)
+                }
+                check(result.getBoolean("accepted")) { result.getString("error") ?: "喜爱记录保存失败" }
+                if (favoriteTrack == track) favorite = result.getBoolean("favorite")
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                playbackError = when (error) {
+                    is IllegalArgumentException, is SecurityException -> "请安装支持喜爱记录的新版本地歌词服务，并启用当前播放器"
+                    else -> error.message ?: "本地歌词服务未响应，喜爱未保存"
+                }
+            } finally { favoriteBusy = false }
+        }
+    }
+
+    fun openMusicTags() {
+        if (demo) { playbackError = "示例歌曲没有可打开的音乐文件"; return }
+        if (musicTagsBusy || musicTagChoices.isNotEmpty()) return
+        val requestedIdentity = identity
+        musicTagsBusy = true
+        viewModelScope.launch {
+            try {
+                val response = request(Contract.PREPARE_MUSIC_TAGS, Bundle().apply { putString("identity", requestedIdentity) }, 10000)
+                if (identity != requestedIdentity) return@launch
+                check(response?.getBoolean("accepted") == true) { response?.getString("error") ?: "请重启系统界面后再打开 Lyrico" }
+                @Suppress("DEPRECATION")
+                val choices = response.getParcelableArrayList<Bundle>("choices").orEmpty().map {
+                    SongVersionChoice(it.getString("choice_id").orEmpty(), it.getString("title").orEmpty(), it.getString("detail").orEmpty())
+                }.filter { it.id.isNotBlank() }
+                check(choices.isNotEmpty()) { "未找到可用的音乐文件" }
+                musicTagToken = response.getString("token").orEmpty()
+                musicTagIdentity = requestedIdentity
+                musicTagChoices = choices
+                if (choices.size == 1) {
+                    launchMusicTagVersion(choices.single())
+                }
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                playbackError = error.message ?: "无法打开 Lyrico"
+            } finally { musicTagsBusy = false }
+        }
+    }
+
+    fun dismissMusicTagChoices() { musicTagChoices = emptyList(); musicTagToken = "" }
+
+    fun selectMusicTagVersion(choice: SongVersionChoice) {
+        if (musicTagsBusy || choice !in musicTagChoices) return
+        val token = musicTagToken
+        val targetIdentity = musicTagIdentity
+        musicTagsBusy = true
+        viewModelScope.launch {
+            try {
+                launchMusicTagVersion(choice, token, targetIdentity)
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                playbackError = error.message ?: "无法打开所选歌曲版本"
+            } finally { musicTagsBusy = false }
+        }
+    }
+
+    private suspend fun launchMusicTagVersion(choice: SongVersionChoice, token: String = musicTagToken,
+        targetIdentity: String = musicTagIdentity) {
+        val response = request(Contract.OPEN_MUSIC_TAGS, Bundle().apply {
+            putString("identity", targetIdentity); putString("token", token); putString("choice_id", choice.id)
+        })
+        check(response?.getBoolean("accepted") == true) { response?.getString("error") ?: "打开 Lyrico 未响应，请重试" }
+        dismissMusicTagChoices()
+    }
 
     fun explanationIntent(context: Context): Intent = Intent(context, AiExplainActivity::class.java)
         .putExtras(explanationSnapshot())

@@ -31,13 +31,15 @@ internal fun BeautifulLyricsDynamicBackground(
     positionMs: Long,
     isPlaying: Boolean,
     animate: Boolean = true,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    speedOverride: Int? = null,
+    blurOverride: Int? = null,
+    brightnessOverride: Int? = null
 ) {
     val context = LocalContext.current
-    val settingsManager = remember(context) { SettingsManager.getInstance(context) }
-    val speed by settingsManager.playerBeautifulLyricsSpeed.collectAsState(initial = 25)
-    val blurPx by settingsManager.playerBeautifulLyricsBlur.collectAsState(initial = 32)
-    val brightness by settingsManager.playerBeautifulLyricsBrightness.collectAsState(initial = 70)
+    val speed = speedOverride ?: remember(context) { SettingsManager.getInstance(context) }.playerBeautifulLyricsSpeed.collectAsState(initial = 25).value
+    val blurPx = blurOverride ?: remember(context) { SettingsManager.getInstance(context) }.playerBeautifulLyricsBlur.collectAsState(initial = 32).value
+    val brightness = brightnessOverride ?: remember(context) { SettingsManager.getInstance(context) }.playerBeautifulLyricsBrightness.collectAsState(initial = 70).value
     val durationMs = (960_000 / speed.coerceIn(5, 60)).coerceIn(16_000, 192_000)
     val activeDrift = rememberSharedFlowProgress(
         durationMillis = durationMs,

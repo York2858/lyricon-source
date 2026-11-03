@@ -38,6 +38,7 @@ import io.github.proify.lyricon.xposed.R
 import io.github.proify.lyricon.xposed.systemui.lyric.control.LyricControlPanel.Companion.NO_SEEK_TARGET
 import io.github.proify.lyricon.xposed.systemui.util.MediaTrackMeta
 import kotlin.math.abs
+import io.github.proify.lyricon.app.activity.lyric.immersive.MediaPanelBackdropView
 
 /**
  * 状态栏歌词控制面板的内容视图（卡片本体）。
@@ -63,13 +64,20 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         fun onNext()
         fun onSeekTo(position: Long)
         fun onImmersiveLyrics(button: View)
-        fun onMusicTags(button: View)
+        fun onFavorite(button: View)
     }
 
     var actionListener: ActionListener? = null
 
     // ---- 视图（在 init 中创建并组装） ----
-    private val card: LinearLayout
+    private val card: FrameLayout
+    private val content: LinearLayout
+    private val backdrop: MediaPanelBackdropView
+    private var coverBitmap: Bitmap? = null
+    private var customBackground: Bitmap? = null
+    private var backdropPreferences: Map<String, *> = emptyMap<String, Any>()
+    private var backdropPlaying = false
+    private var backdropPosition = 0L
     private val coverView: ImageView
 
     /**
@@ -87,7 +95,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
     private val playButton: ImageView
     private val nextButton: ImageView
     private val lyricsButton: ImageView
-    private val musicTagsButton: ImageView
+    private val favoriteButton: ImageView
 
     /** 模块（宿主 App）Resources，用于加载自带图标。 */
     private val moduleRes: Resources = ControlUi.moduleResources(context)
@@ -126,15 +134,33 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
 
     init {
 
-        card = LinearLayout(context).apply {
+        content = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(CARD_PADDING_DP.dp)
+        }
+        val moduleContext = context.createPackageContext(BuildConfig.APP_PACKAGE_NAME, Context.CONTEXT_IGNORE_SECURITY)
+        val backdropContext = object : android.view.ContextThemeWrapper(moduleContext, android.R.style.Theme_Material_NoActionBar) {
+            override fun getApplicationContext(): Context = context.applicationContext ?: context
+            override fun registerComponentCallbacks(callback: android.content.ComponentCallbacks) = applicationContext.registerComponentCallbacks(callback)
+            override fun unregisterComponentCallbacks(callback: android.content.ComponentCallbacks) = applicationContext.unregisterComponentCallbacks(callback)
+        }
+        backdrop = MediaPanelBackdropView(backdropContext)
+        card = object : FrameLayout(context) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                measureChild(content, widthMeasureSpec, heightMeasureSpec)
+                setMeasuredDimension(resolveSize(content.measuredWidth, widthMeasureSpec), resolveSize(content.measuredHeight, heightMeasureSpec))
+                backdrop.measure(MeasureSpec.makeMeasureSpec(measuredWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(measuredHeight, MeasureSpec.EXACTLY))
+            }
+        }.apply {
             clipToOutline = true
             outlineProvider = G2RoundedCorner.outlineProvider(CARD_RADIUS_DP.dp.toFloat())
             background = ControlUi.roundedDrawable(CARD_COLOR, CARD_RADIUS_DP.dp.toFloat())
+            addView(backdrop, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            addView(content, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         }
 
         coverView = ImageView(context).apply {
+            contentDescription = "专辑封面"
             layoutParams = LinearLayout.LayoutParams(COVER_SIZE_DP.dp, COVER_SIZE_DP.dp)
             scaleType = ImageView.ScaleType.CENTER_CROP
             clipToOutline = true
@@ -145,6 +171,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         }
 
         titleView = MarqueeTitleView(context).apply {
+            contentDescription = "歌名"
             textSize = TITLE_TEXT_SIZE_SP.sp
             textColor = TEXT_COLOR_PRIMARY
             textTypeface = Typeface.create(Typeface.DEFAULT,500,false)
@@ -152,6 +179,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         }
 
         artistView = TextView(context).apply {
+            contentDescription = "歌手"
             textSize = ARTIST_TEXT_SIZE_SP
             setTextColor(TEXT_COLOR_SECONDARY)
             maxLines = 1
@@ -159,6 +187,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         }
 
         seekBar = SeekBar(context).apply {
+            contentDescription = "播放进度"
             // 长圆形（胶囊）轨道：非 Material 细线，两端为半圆
             progressDrawable = longRoundedTrack()
             // 去掉拖动圆球（thumb），纯进度条；仍可点击/拖动轨道进行 seek
@@ -233,13 +262,13 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
             setOnClickListener { actionListener?.onNext() }
         }
 
-        musicTagsButton = ImageView(context).apply {
-            setImageDrawable(moduleRes.getDrawable(drawableId("sui_control_music_tag"), context.theme))
-            setPadding(7.dp)
-            contentDescription = moduleRes.getString(R.string.control_music_tags)
+        favoriteButton = ImageView(context).apply {
+            setImageDrawable(moduleRes.getDrawable(drawableId("sui_control_favorite"), context.theme))
+            imageTintList = android.content.res.ColorStateList.valueOf(TEXT_COLOR_PRIMARY)
+            contentDescription = "喜爱"
             tooltipText = contentDescription
             setOnTouchListener(ControlUi.pressFeedbackListener())
-            setOnClickListener { v -> actionListener?.onMusicTags(v) }
+            setOnClickListener { v -> actionListener?.onFavorite(v) }
         }
 
         lyricsButton = ImageView(context).apply {
@@ -443,6 +472,16 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
      * @param systemMeta 系统媒体会话元数据，优先于 Song 的同名字段；
      *                   某个字段缺失时回退到 Song。
      */
+    fun setFavorite(favorite: Boolean, busy: Boolean = false, available: Boolean = true) {
+        favoriteButton.setImageDrawable(moduleRes.getDrawable(drawableId(
+            if (favorite) "sui_control_favorite_filled" else "sui_control_favorite"), context.theme)
+            .mutate().apply { setTint(TEXT_COLOR_PRIMARY) })
+        favoriteButton.isEnabled = available && !busy
+        favoriteButton.alpha = if (busy || !available) .45f else 1f
+        favoriteButton.contentDescription = if (favorite) "取消喜爱" else "喜爱"
+        favoriteButton.tooltipText = favoriteButton.contentDescription
+    }
+
     fun bindSong(
         song: Song?,
         position: Long,
@@ -472,6 +511,8 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
 
     /** 刷新进度（拖动或刚体锁定期间忽略外部刷新）。 */
     fun updatePosition(position: Long) {
+        backdropPosition = position
+        updateBackdrop()
         if (isSeeking) return
         if (isSeekLocked(position)) return
         seekBar.progress = positionToProgress(position)
@@ -501,17 +542,25 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
     /** 刷新播放/暂停图标。 */
     fun setPlaying(playing: Boolean) {
         playButton.setImageDrawable(playPauseIcon(playing))
+        backdropPlaying = playing
+        updateBackdrop()
     }
 
     /** 设置封面图片。 */
-    fun setCover(bitmap: Bitmap) {
-        coverView.setImageBitmap(bitmap)
+    fun setCover(bitmap: Bitmap?) {
+        if (bitmap == null) coverView.setImageDrawable(null) else coverView.setImageBitmap(bitmap)
+        coverBitmap = bitmap
+        updateBackdrop()
     }
 
     /** 用封面主色的暗化色刷新卡片背景。 */
-    fun setBackdropColor(color: Int) {
-        card.background = ControlUi.roundedDrawable(color, CARD_RADIUS_DP.dp.toFloat())
+    fun setAppearance(preferences: Map<String, *>, custom: Bitmap? = null) {
+        backdropPreferences = preferences
+        customBackground = custom
+        updateBackdrop()
     }
+
+    private fun updateBackdrop() = backdrop.update(coverBitmap, backdropPreferences, backdropPlaying, backdropPosition, customBackground)
 
     /**
      * 长圆（胶囊）轨道 Drawable：底轨 + 已填充进度两层，两端为半圆。
@@ -561,14 +610,6 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         titleColumn.addView(titleView)
         titleColumn.addView(artistView)
 
-        titleColumn.addView(
-            seekBar,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = SEEK_BAR_TOP_MARGIN_DP.dp }
-        )
-
         val timeRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -576,7 +617,6 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         }
         timeRow.addView(currentTimeView)
         timeRow.addView(totalTimeView)
-        titleColumn.addView(timeRow)
 
         val infoRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -585,7 +625,10 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         }
         infoRow.addView(coverView)
         infoRow.addView(titleColumn)
-        card.addView(infoRow)
+        content.addView(infoRow)
+        content.addView(seekBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = SEEK_BAR_TOP_MARGIN_DP.dp })
+        content.addView(timeRow)
     }
 
     /**
@@ -598,13 +641,13 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
             gravity = Gravity.CENTER
             setPadding(0, ACTION_ROW_TOP_PADDING_DP.dp, 0, 0)
         }
-        addActionSlot(row, musicTagsButton)
+        addActionSlot(row, favoriteButton, 25.dp)
         addActionSlot(row, previousButton)
         addActionSlot(row, playButton)
         addActionSlot(row, nextButton)
         addActionSlot(row, lyricsButton, 26.dp)
 
-        card.addView(
+        content.addView(
             row,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -670,7 +713,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
     private companion object {
         const val CARD_RADIUS_DP = 28
         const val COVER_RADIUS_DP = 16
-        const val COVER_SIZE_DP = 72
+        const val COVER_SIZE_DP = 56
         const val CARD_PADDING_DP = 16
 
         const val INFO_ROW_BOTTOM_PADDING_DP = 10

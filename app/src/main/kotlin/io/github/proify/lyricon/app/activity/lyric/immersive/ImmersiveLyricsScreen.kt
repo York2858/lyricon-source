@@ -17,6 +17,12 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.res.painterResource
+import io.github.proify.lyricon.app.R
+import androidx.compose.ui.semantics.stateDescription
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -60,6 +66,15 @@ internal fun ImmersiveLyricsScreen(state: ImmersiveLyricsState) {
         onDispose { lifecycle.removeObserver(observer); view.keepScreenOn = previous }
     }
     val activity = context as? Activity
+    val fullscreen = preferences.flag("fullscreen", false)
+    DisposableEffect(activity, fullscreen, visible) {
+        val controller = activity?.window?.let { WindowCompat.getInsetsController(it, view) }
+        if (fullscreen && visible) {
+            controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller?.hide(WindowInsetsCompat.Type.statusBars())
+        } else controller?.show(WindowInsetsCompat.Type.statusBars())
+        onDispose { controller?.show(WindowInsetsCompat.Type.statusBars()) }
+    }
     val hdr = preferences.flag("hdr", false)
     val hdrRatio = preferences.number("hdr_brightness", 200) / 100f
     DisposableEffect(activity, hdr, hdrRatio, visible) {
@@ -101,11 +116,21 @@ internal fun ImmersiveLyricsScreen(state: ImmersiveLyricsState) {
                     }
                     Spacer(Modifier.width(12.dp))
                     SynchronizedSongHeader(state.title.ifBlank { "沉浸歌词" }, state.artist.ifBlank { "词幕" },
-                        originalFont, palette.onBackground, visible, Modifier.weight(1f))
-                    Spacer(Modifier.width(20.dp))
+                        originalFont, palette.onBackground, visible, Modifier.weight(1f),
+                        preferences.number("title_size", 22).coerceIn(12, 36), preferences.number("artist_size", 14).coerceIn(10, 28),
+                        onTitleClick = state::openMusicTags)
+                    Spacer(Modifier.width(4.dp))
+                    IconButton(onClick = state::toggleFavorite, enabled = state.canFavorite && !state.favoriteBusy,
+                        modifier = Modifier.size(40.dp).semantics {
+                            contentDescription = if (state.favorite) "取消喜爱" else "喜爱"
+                            stateDescription = if (state.favorite) "已喜爱" else "未喜爱"
+                        }) {
+                        Icon(painterResource(if (state.favorite) R.drawable.halcyon_favorite_filled else R.drawable.halcyon_favorite),
+                            null, Modifier.size(25.dp), tint = palette.onBackground.copy(alpha = if (state.favorite) 1f else .92f))
+                    }
                     IconButton(onClick = {
                         context.startActivity(android.content.Intent(context, ImmersiveSettingsActivity::class.java))
-                    }, modifier = Modifier.semantics { contentDescription = "歌词设置" }) {
+                    }, modifier = Modifier.size(40.dp).semantics { contentDescription = "歌词设置" }) {
                         Canvas(Modifier.size(24.dp)) {
                             repeat(3) { dot -> drawCircle(palette.onBackground, 2.dp.toPx(), Offset(center.x, center.y + (dot - 1) * 6.dp.toPx())) }
                         }
@@ -139,6 +164,9 @@ internal fun ImmersiveLyricsScreen(state: ImmersiveLyricsState) {
                 }
             }
         }
+        if (state.musicTagChoices.size > 1) SongVersionChooser(state.musicTagChoices, state.cover, palette, preferences,
+            originalFont, state.playing && visible, position, state.musicTagsBusy,
+            onDismiss = state::dismissMusicTagChoices, onSelect = state::selectMusicTagVersion)
     }
 }
 
@@ -163,9 +191,12 @@ private fun rememberHalcyonFont(path: String?, weight: Int): FontFamily {
 }
 
 @Composable
-internal fun HalcyonBackdrop(cover: Bitmap?, palette: PlayerPalette, preferences: Map<String, *>, playing: Boolean, position: Long) {
+internal fun HalcyonBackdrop(cover: Bitmap?, palette: PlayerPalette, preferences: Map<String, *>, playing: Boolean, position: Long,
+    customBackground: Bitmap? = null) {
     when (preferences.number("background_mode", 0)) {
-        1 -> BeautifulLyricsDynamicBackground(palette, cover, position, playing, animate = playing, modifier = Modifier.fillMaxSize())
+        1 -> BeautifulLyricsDynamicBackground(palette, cover, position, playing, animate = playing, modifier = Modifier.fillMaxSize(),
+            speedOverride = preferences.number("beautiful_speed", 25), blurOverride = preferences.number("beautiful_blur", 32),
+            brightnessOverride = preferences.number("beautiful_brightness", 70))
         2 -> {
             Box(Modifier.fillMaxSize().background(palette.middle)) {
                 if (cover != null) Image(cover.asImageBitmap(), null, contentScale = ContentScale.Crop,
@@ -177,9 +208,10 @@ internal fun HalcyonBackdrop(cover: Bitmap?, palette: PlayerPalette, preferences
         3 -> Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(palette.top, palette.middle, palette.bottom))))
         4 -> PlayerCustomBackground(preferences["custom_background_uri"] as? String ?: "",
             imageAlpha = preferences.number("custom_opacity", 100) / 100f,
-            dimAlpha = preferences.number("custom_dim", 26) / 100f, modifier = Modifier.fillMaxSize())
+            dimAlpha = preferences.number("custom_dim", 26) / 100f, modifier = Modifier.fillMaxSize(), bitmap = customBackground)
         else -> AppleCoverFlowBackground(cover, palette.middle, isDark = true, isPlaying = playing,
             animate = preferences.flag("flow_enabled", true) && playing,
-            blur = preferences.number("apple_flow_blur", 60).toFloat(), modifier = Modifier.fillMaxSize())
+            blur = preferences.number("apple_flow_blur", 60).toFloat(), modifier = Modifier.fillMaxSize(),
+            speedOverride = preferences.number("apple_flow_speed", 10))
     }
 }

@@ -216,6 +216,17 @@ object SystemUIMediaUtils {
      * @param packageName 目标播放器应用包名，传 null 时返回最近注册的控制器
      * @return 匹配到的 [MediaController]，未找到时返回 null
      */
+    fun getMusicController(packageName: String?): MediaController? {
+        fun hasTitle(controller: MediaController): Boolean = controller.metadata?.let {
+            !it.getString(MediaMetadata.METADATA_KEY_TITLE).isNullOrBlank() ||
+                !it.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE).isNullOrBlank()
+        } == true
+        if (!packageName.isNullOrBlank()) getController(packageName)?.takeIf(::hasTitle)?.let { return it }
+        return activeSessions.values.map { it.controller }.filter(::hasTitle)
+            .sortedWith(compareByDescending<MediaController> { it.playbackState?.state == PlaybackState.STATE_PLAYING }
+                .thenByDescending { it.playbackState?.lastPositionUpdateTime ?: 0L }).firstOrNull()
+    }
+
     fun getController(packageName: String? = null): MediaController? {
         if (activeSessions.isEmpty()) return null
         val target = packageName?.takeIf { it.isNotBlank() }

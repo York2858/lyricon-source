@@ -126,6 +126,7 @@ internal fun ImmersiveSettingsContent(manager: SettingsManager, values: Map<Stri
                     PreferenceToggle("显示翻译", "translation", true, manager, values)
                     PreferenceToggle("逐字上浮", "word_lift", true, manager, values)
                     PreferenceToggle("屏幕常亮", "keep_screen_on", false, manager, values)
+                    PreferenceToggle("全屏显示（隐藏状态栏）", "fullscreen", false, manager, values)
                     PreferenceToggle("彩虹歌词", "rainbow", false, manager, values)
                     PreferenceToggle("HDR 歌词高亮", "hdr", false, manager, values)
                     PreferenceToggle("延音动效", "sustain_motion", true, manager, values)
@@ -148,6 +149,8 @@ internal fun ImmersiveSettingsContent(manager: SettingsManager, values: Map<Stri
                 }
             }
             "style" -> SettingsCard {
+                PreferenceSlider("歌名字号", "title_size", 22, 12..36, manager, values)
+                PreferenceSlider("歌手字号", "artist_size", 14, 10..28, manager, values)
                 PreferenceChoice(
                     title = "歌词对齐",
                     items = listOf("左对齐", "居中", "右对齐"),
