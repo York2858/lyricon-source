@@ -23,7 +23,11 @@ class ImmersiveLyricsScreenTest {
     @get:Rule val compose = createEmptyComposeRule()
     private lateinit var activity: ComponentActivity
 
-    @Test fun lyricsOnlyLayoutAndArtistSettings() {
+    @Test fun lyricsOnlyLayoutAndArtistSettings() = checkLyricsLayout()
+
+    @Test fun translationShortcutIsOnTheLyricsPage() = checkLyricsLayout(shortcutOnly = true)
+
+    private fun checkLyricsLayout(shortcutOnly: Boolean = false) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as Application
         val preferences = immersivePreferences(app)
@@ -64,8 +68,10 @@ class ImmersiveLyricsScreenTest {
                 compose.onNodeWithText(it).assertDoesNotExist()
             }
             compose.onNodeWithContentDescription("播放进度").assertDoesNotExist()
+            compose.onNodeWithTag("immersive_retranslate").assertIsDisplayed().assertIsNotEnabled()
             compose.runOnIdle { assertFalse(state.playing) }
             screenshot("immersive-preview")
+            if (shortcutOnly) return
             compose.onNodeWithTag("immersive_lyrics").performTouchInput { swipeUp() }
             compose.mainClock.advanceTimeBy(500)
             compose.runOnIdle { assertEquals(2500L, state.currentPosition()); assertFalse(state.playing); assertEquals(0L, state.followRequest) }
@@ -98,6 +104,7 @@ class ImmersiveLyricsScreenTest {
             compose.mainClock.advanceTimeBy(1000)
             screenshot("immersive-settings")
             compose.onNodeWithText("歌词显示").assertIsDisplayed()
+            compose.onNodeWithText("重新翻译").assertDoesNotExist()
             compose.onNodeWithTag("immersive_settings").performTouchInput { swipeUp() }
             compose.mainClock.advanceTimeBy(1000)
             compose.runOnIdle { liveUpdates.value = true }

@@ -26,6 +26,7 @@ import io.github.proify.lyricon.xposed.hook.PackageHooker
 import io.github.proify.lyricon.xposed.logger.YLog
 import io.github.proify.lyricon.xposed.systemui.ai.translate.AiTranslator
 import io.github.proify.lyricon.xposed.systemui.hook.OplusCapsuleHooker
+import io.github.proify.lyricon.xposed.systemui.hook.OplusLockscreenMediaFavoriteHooker
 import io.github.proify.lyricon.xposed.systemui.hook.StatusBarLyricTouchRouter
 import io.github.proify.lyricon.xposed.systemui.hook.StatusBarColorMonitor
 import io.github.proify.lyricon.xposed.systemui.hook.StatusBarDisableHooker
@@ -148,6 +149,8 @@ object SystemUIHooker : PackageHooker() {
         val context = appContext ?: return
 
         ScreenStateMonitor.initialize(context)
+        // OplusMediaFavoriteHooker.initialize(module, classLoader) // 控制中心小卡片爱心暂不启用
+        OplusLockscreenMediaFavoriteHooker.initialize(module, classLoader, context)
         OplusCapsuleHooker.initialize(module, classLoader)
         StatusBarLyricTouchRouter.initialize(module)
         NotificationCoverHelper.initialize()

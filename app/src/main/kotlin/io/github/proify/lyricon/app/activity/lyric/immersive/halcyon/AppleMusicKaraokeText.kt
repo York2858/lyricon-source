@@ -67,6 +67,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.proify.lyricon.app.activity.lyric.immersive.halcyon.SettingsManager
 import io.github.proify.lyricon.app.activity.lyric.immersive.halcyon.model.LyricWord
+import java.text.BreakIterator
+import java.util.Locale
 import kotlin.math.cos
 import kotlin.math.PI
 import kotlin.math.sin
@@ -125,6 +127,7 @@ internal fun TimedLyricText(
     onWordClick: ((Long) -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
     positionClock: State<Long>? = null,
+    lineTiming: LongRange? = null,
     modifier: Modifier = Modifier
 ) {
     // TTML may encode the blank before a word as part of that word. Move it to the prior
@@ -141,8 +144,13 @@ internal fun TimedLyricText(
             } else source
         }
     }
-    val timedWords = remember(text, sourceWords, sustainThresholdMs) {
+    val explicitWords = remember(text, sourceWords, sustainThresholdMs) {
         sourceWords.toAppleMusicRenderWords(text, sustainThresholdMs)
+    }
+    val timedWords = remember(text, explicitWords, lineTiming) {
+        explicitWords.ifEmpty {
+            lineTiming?.let { lineSweepWords(text, it) }.orEmpty()
+        }
     }
     val rubies = remember(timedWords, pronunciation, pronunciationWords) {
         rubiesForTimedWords(
@@ -233,7 +241,7 @@ internal fun TimedLyricText(
                 ruby = rubies.getOrNull(index).orEmpty(),
                 rubyStyle = rubyStyle,
                 rubyBelow = rubyBelow,
-                onWordClick = onWordClick,
+                onWordClick = if (explicitWords.isEmpty()) null else onWordClick,
                 onLongPress = onLongPress
             )
         }
@@ -1449,21 +1457,31 @@ internal fun List<LyricWord>.toAppleMusicRenderWords(
     lineText: String,
     sustainThresholdMs: Int
 ): List<AppleMusicRenderWord> {
-    if (isEmpty() || lineText.isBlank()) return emptyList()
-    val result = mutableListOf<AppleMusicRenderWord>()
+    val source = filter { it.text.isNotBlank() && it.startMs >= 0 && it.endMs >= it.startMs }
+    if (source.isEmpty() || lineText.isBlank()) return emptyList()
+    val visibleLine = lineText.trimEnd()
+    // Display text may be reconstructed independently by the provider. Align by visible
+    // tokens, not by whitespace, and retain source spans if that alignment fails.
     var cursor = 0
-    forEachIndexed { index, word ->
+    val starts = source.map { word ->
+        visibleLine.indexOf(word.text.trim(), cursor).also { if (it >= 0) cursor = it + word.text.trim().length }
+    }
+    val useDisplayText = starts.all { it >= 0 }
+    val result = mutableListOf<AppleMusicRenderWord>()
+    source.forEachIndexed { index, sourceWord ->
         // TTML credit punctuation often has begin == end. Keep it visible and reveal it
         // at that timestamp instead of silently dropping the colon/slash from the line.
-        if (word.text.isBlank() || word.endMs < word.startMs) return@forEachIndexed
-        val start = lineText.indexOf(word.text, cursor)
-        if (start < 0) return emptyList()
-        val end = start + word.text.length
-        val nextStart = getOrNull(index + 1)?.text?.let { next -> lineText.indexOf(next, end) } ?: -1
-        val suffix = when {
-            nextStart > end -> lineText.substring(end, nextStart)
-            index == lastIndex && end < lineText.length -> lineText.substring(end)
-            else -> ""
+        val word = sourceWord.copy(text = sourceWord.text.trim())
+        val start = starts[index]
+        val prefix = if (index == 0 && useDisplayText) visibleLine.substring(0, start) else ""
+        val sourceSeparator = if (index == source.lastIndex) "" else sourceWord.text.takeLastWhile(Char::isWhitespace)
+        val suffix = if (useDisplayText) {
+            val gap = visibleLine.substring(start + word.text.length, starts.getOrNull(index + 1) ?: visibleLine.length)
+            // Separators belong to the timed source, even when the display line also
+            // supplies untimed punctuation elsewhere.
+            if (gap.all(Char::isWhitespace)) sourceSeparator else gap
+        } else {
+            sourceSeparator
         }
         val duration = word.endMs - word.startMs
         val splitForCharacters = word.shouldSplitForAppleMusicCharacters(sustainThresholdMs)
@@ -1479,7 +1497,8 @@ internal fun List<LyricWord>.toAppleMusicRenderWords(
                 }
                 result += AppleMusicRenderWord(
                     word = LyricWord(
-                        text = char.toString() + if (charIndex == chars.lastIndex) suffix else "",
+                        text = (if (charIndex == 0) prefix else "") + char +
+                            if (charIndex == chars.lastIndex) suffix else "",
                         startMs = segmentStart,
                         endMs = segmentEnd
                     ),
@@ -1490,14 +1509,39 @@ internal fun List<LyricWord>.toAppleMusicRenderWords(
             // TTML providers sometimes put a short English phrase in a single timed span.
             // Split it at word boundaries so each word gets its own progressive feather.
             result += AppleMusicRenderWord(
-                word = word.copy(text = word.text + suffix),
+                word = word.copy(text = prefix + word.text + suffix),
                 sustainEndMs = word.endMs.takeIf { duration >= sustainThresholdMs.coerceAtLeast(0) }
             )
                 .splitEnglishPhraseForAppleMusic()
         }
-        cursor = end + suffix.length
     }
     return result
+}
+
+/** Line-timed lyrics sweep from beginning to end, including across wrapped rows. */
+internal fun lineSweepWords(text: String, timing: LongRange): List<AppleMusicRenderWord> {
+    val line = text.trim()
+    val duration = timing.last - timing.first
+    if (line.isEmpty() || duration <= 0) return emptyList()
+    val breaker = BreakIterator.getLineInstance(Locale.ROOT).apply { setText(line) }
+    val parts = buildList {
+        var from = breaker.first()
+        var end = breaker.next()
+        while (end != BreakIterator.DONE) {
+            add(line.substring(from, end))
+            from = end
+            end = breaker.next()
+        }
+    }
+    val weights = parts.map { it.count { char -> !char.isWhitespace() }.coerceAtLeast(1) }
+    val total = weights.sum()
+    var passed = 0
+    return parts.mapIndexed { index, part ->
+        val start = timing.first + duration * passed / total
+        passed += weights[index]
+        val end = timing.first + duration * passed / total
+        AppleMusicRenderWord(LyricWord(part, start, end), sustainEndMs = null)
+    }
 }
 
 /**
@@ -1612,7 +1656,7 @@ private fun AppleMusicRenderWord.splitEnglishPhraseForAppleMusic(): List<AppleMu
     var elapsed = 0L
     return segments.mapIndexed { index, segment ->
         val weight = segment.count { it.isLetterOrDigit() }.coerceAtLeast(1)
-        val startMs = word.startMs + elapsed
+        val startMs = word.startMs + duration * elapsed / totalWeight
         val endMs = if (index == segments.lastIndex) {
             word.endMs
         } else {

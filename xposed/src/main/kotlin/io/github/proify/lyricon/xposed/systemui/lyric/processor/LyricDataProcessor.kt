@@ -39,6 +39,17 @@ object LyricDataProcessor {
             AiTranslationPostProcessor(aiConfigProvider)
         ).sortedBy { it.priority }
     }
+    fun requireManualTranslation() {
+        (postProcessors.first { it is AiTranslationPostProcessor } as AiTranslationPostProcessor).requireManualTranslation()
+    }
+
+    suspend fun retranslate(song: Song, style: LyricStyle, onProgress: (Song) -> Unit): Song {
+        val source = song.deepCopy().apply {
+            lyrics?.forEach { it.translation = null; it.translationWords = null }
+        }
+        return (postProcessors.first { it is AiTranslationPostProcessor } as AiTranslationPostProcessor)
+            .process(source, style, true, onProgress)
+    }
 
     /**
      * 执行前置加工。

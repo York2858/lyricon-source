@@ -64,7 +64,7 @@ internal class TranslationLibraryStore(private val cache: AiTranslationCache) {
     }
 
     suspend fun lines(id: String, offset: Int): TranslationLinePage = cache.withDatabase { db ->
-        db.rawQuery("SELECT translation_json, original_json,timing_json,status FROM ai_cache WHERE song_id = ?", arrayOf(id)).use { c ->
+        db.rawQuery("SELECT translation_json, original_json,timing_json,status,title,artist FROM ai_cache WHERE song_id = ?", arrayOf(id)).use { c ->
             check(c.moveToFirst()) { "这条翻译已被删除，请刷新列表" }
             if (c.getString(3) != "translated") return@withDatabase TranslationLinePage(emptyList(), null)
             val translations = json.decodeFromString<List<TranslationItem>>(c.getString(0))
@@ -72,7 +72,12 @@ internal class TranslationLibraryStore(private val cache: AiTranslationCache) {
             val originals = c.getString(1).takeIf { it.isNotBlank() }?.let { json.decodeFromString<List<String>>(it) }.orEmpty()
             val timing = c.getString(2).takeIf { it.isNotBlank() }
                 ?.let { json.decodeFromString<List<TranslationTiming>>(it).associateBy { row -> row.index } }.orEmpty()
-            val allLines = translationLibraryLines(originals, translations.associate { it.index to it.translation }, timing)
+            val key = translationTimelineKey(c.getString(4).orEmpty(), c.getString(5).orEmpty(), originals, timing.values.toList())
+            val lyricOffset = db.rawQuery("SELECT offset_ms FROM lyric_offsets WHERE source_key = ?", arrayOf(key)).use {
+                if (it.moveToFirst()) it.getInt(0) else 0
+            }
+            val allLines = translationLibraryLines(originals, translations.associate { it.index to it.translation },
+                timing.mapValues { it.value.withLyricOffset(lyricOffset) })
             val start = offset.coerceIn(0, allLines.size)
             var bytes = 0
             val rows = buildList {

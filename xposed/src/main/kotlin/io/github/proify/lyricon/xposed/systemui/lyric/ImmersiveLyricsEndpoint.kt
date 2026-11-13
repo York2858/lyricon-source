@@ -13,11 +13,14 @@ import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.xposed.systemui.util.MediaTrackMeta
 import io.github.proify.lyricon.xposed.systemui.util.SystemUIMediaUtils
 import io.github.proify.lyricon.xposed.systemui.lyric.control.MusicTagLauncher
+import io.github.proify.lyricon.xposed.systemui.ai.translate.AiTranslator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -27,12 +30,19 @@ object ImmersiveLyricsEndpoint {
     private var cachedSong: Song? = null
     private var cachedJson = ""
     private var revision = 0L
+    private val offsetSources = LinkedHashMap<String, Song>()
+    private var lastSource: Song? = null
+    private var sourceToken = ""
+    private var sourceKey = ""
+    private var lyricOffset = 0
+    private val sourceMutex = Mutex()
 
     fun messenger(context: Context): Messenger = endpoint ?: Messenger(
         Handler(Looper.getMainLooper()) { message ->
             val allowed = context.packageManager.getPackagesForUid(message.sendingUid)
                 ?.contains(PackageNames.APPLICATION) == true
             if (!allowed) return@Handler true
+            val action = message.what
             val request = Bundle(message.data)
             val reply = message.replyTo
             val player = LyricViewController.activePackage
@@ -53,7 +63,31 @@ object ImmersiveLyricsEndpoint {
                     val position = playback?.position?.takeIf {
                         playback.state == PlaybackState.STATE_PAUSED && it >= 0
                     } ?: LyricViewController.currentLogicPosition
+                    val source = LyricDataHub.translationSource()
+                    sourceMutex.withLock {
+                        if (source !== lastSource) {
+                            val changed = source != lastSource
+                            val saved = if (changed && source != null) withContext(Dispatchers.IO) {
+                                AiTranslator.getLyricOffset(source)
+                            } else null
+                            if (LyricDataHub.translationSource() !== source) return@launch
+                            lastSource = source
+                            if (changed) {
+                                sourceToken = if (source == null) "" else java.util.UUID.randomUUID().toString()
+                                sourceKey = saved?.first.orEmpty()
+                                lyricOffset = saved?.second ?: 0
+                            }
+                            if (changed && source != null) {
+                                offsetSources[sourceToken] = source
+                                while (offsetSources.size > 32) offsetSources.remove(offsetSources.keys.first())
+                            }
+                        }
+                    }
                     val result = Bundle().apply {
+                        putString("source_token", sourceToken)
+                        putString("source_key", sourceKey)
+                        putInt("lyric_offset", lyricOffset)
+                        putBoolean("retranslating", LyricDataHub.isRetranslating())
                         putString("module_build", ImmersiveNotificationCover.BUILD_ID)
                         putLong("revision", revision)
                         putString("identity", identity)
@@ -81,6 +115,23 @@ object ImmersiveLyricsEndpoint {
                     val latest = LyricDataHub.immersiveSong()
                     if ("${LyricViewController.activePackage}/${latest?.id}/${latest?.name}/${latest?.artist}" != identity) return@launch
                     runCatching { reply.send(Message.obtain(null, Contract.SNAPSHOT).apply { data = result }) }
+                }
+            } else if (message.what == Contract.SYNC_OFFSET || message.what == Contract.RETRANSLATE) {
+                scope.launch {
+                    val result = Bundle()
+                    try {
+                        if (action == Contract.SYNC_OFFSET) {
+                            val source = offsetSources[request.getString("source_token")] ?: error("歌词来源已失效，请重新进入歌词页后调节")
+                            withContext(Dispatchers.IO) { AiTranslator.syncLyricOffset(source, request.getInt("offset")) }
+                            if (source == lastSource) lyricOffset = request.getInt("offset").coerceIn(-5000, 5000)
+                        } else {
+                            check(request.getString("source_token") == sourceToken && sourceToken.isNotBlank()) { "曲目已变化，请重新进入歌词页" }
+                            LyricDataHub.retranslate()
+                        }
+                        result.putBoolean("accepted", true)
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (error: Exception) { result.putBoolean("accepted", false); result.putString("error", error.message) }
+                    runCatching { reply?.send(Message.obtain(null, action).apply { data = result }) }
                 }
             } else if (message.what == Contract.PREPARE_MUSIC_TAGS) {
                 scope.launch {

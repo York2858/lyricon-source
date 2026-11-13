@@ -9,20 +9,19 @@ import android.os.Message
 import android.os.Messenger
 import android.view.View
 import android.widget.Toast
-import io.github.proify.lyricon.common.util.CoverImages
 import io.github.proify.lyricon.lyric.ai.explain.AiExplainContract as Contract
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.xposed.BuildConfig
 import io.github.proify.lyricon.xposed.logger.YLog
+import io.github.proify.lyricon.xposed.systemui.lyric.ImmersiveArtwork
+import io.github.proify.lyricon.xposed.systemui.lyric.LyricDataHub
 import io.github.proify.lyricon.xposed.systemui.lyric.LyricViewController
 import io.github.proify.lyricon.xposed.systemui.util.MediaTrackMeta
-import io.github.proify.lyricon.xposed.systemui.util.NotificationCoverHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
 
 /** Frozen lyric snapshot with a narrowly scoped capability to request a fresh snapshot. */
 object AiExplainLauncher {
@@ -33,7 +32,7 @@ object AiExplainLauncher {
         Messenger(Handler(Looper.getMainLooper()) { message ->
             if (message.what != Contract.REQUEST_SNAPSHOT) return@Handler false
             val reply = message.replyTo ?: return@Handler true
-            val snapshot = snapshot(LyricViewController.currentSong)
+            val snapshot = snapshot(LyricDataHub.immersiveSong())
             runCatching {
                 reply.send(Message.obtain(null, Contract.RESULT_SNAPSHOT).apply { data = snapshot })
             }
@@ -41,38 +40,30 @@ object AiExplainLauncher {
         })
     }
 
-    @Suppress("UNUSED_PARAMETER")
-    fun launch(anchor: View, button: View, song: Song?) {
+    fun launch(button: View, song: Song?, onOpened: () -> Unit) {
         val context = button.context
         val snapshot = snapshot(song)
-        if (snapshot.getStringArrayList(Contract.EXTRA_LINE_TEXTS).isNullOrEmpty()) {
-            Toast.makeText(context, "暂未获取到歌词", Toast.LENGTH_SHORT).show()
-            return
-        }
         val player = LyricViewController.activePackage
         scope.launch {
             val cover = withContext(Dispatchers.IO) {
                 runCatching {
-                    val file = NotificationCoverHelper.getLatestCoverFile(player) ?: return@runCatching null
-                    val bitmap = CoverImages.decode(file, 128) ?: return@runCatching null
-                    try {
-                        ByteArrayOutputStream().use {
-                            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, it)
-                            it.toByteArray()
-                        }
-                    } finally { bitmap.recycle() }
+                    ImmersiveArtwork.load(player, snapshot.getString(Contract.EXTRA_TITLE).orEmpty(),
+                        snapshot.getString(Contract.EXTRA_ARTIST).orEmpty()).bytes
                 }.getOrNull()
             }
             val intent = Intent().apply {
                 setClassName(BuildConfig.APP_PACKAGE_NAME, Contract.ACTIVITY_CLASS)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or
-                    Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
                 putExtras(snapshot)
                 putExtra(Contract.EXTRA_COVER, cover)
                 putExtra(Contract.EXTRA_SNAPSHOT_REQUESTER, requester)
             }
             runCatching { context.startActivity(intent) }
-                .onFailure { YLog.error("AiExplainLauncher", "Failed to launch explanation", it) }
+                .onSuccess { onOpened() }
+                .onFailure {
+                    YLog.error("AiExplainLauncher", "Failed to launch explanation", it)
+                    Toast.makeText(context, "无法打开音乐解读", Toast.LENGTH_SHORT).show()
+                }
         }
     }
 

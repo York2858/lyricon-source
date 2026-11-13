@@ -16,6 +16,10 @@ import android.util.Log
 import android.view.View
 import android.widget.Toast
 import io.github.proify.lyricon.app.bridge.AppBridge.MusicTagPrefs
+import io.github.proify.lyricon.app.bridge.ImmersiveLyricsContract
+import io.github.proify.lyricon.xposed.BuildConfig
+import io.github.proify.lyricon.xposed.systemui.lyric.LyricDataHub
+import io.github.proify.lyricon.xposed.systemui.lyric.ImmersiveArtwork
 import io.github.proify.lyricon.xposed.R
 import io.github.proify.lyricon.xposed.logger.YLog
 import io.github.proify.lyricon.xposed.systemui.lyric.LyricViewController
@@ -35,7 +39,6 @@ internal object MusicTagLauncher {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var activeJob: Job? = null
     internal data class AudioFile(val uri: Uri, val mime: String, val title: String, val detail: String)
-    private class AmbiguousAudio : Exception()
     private data class PreparedOpen(val choices: Map<String, Intent>, val expires: Long)
     private val prepared = java.util.concurrent.ConcurrentHashMap<String, PreparedOpen>()
 
@@ -103,34 +106,31 @@ internal object MusicTagLauncher {
         // Later skips must not change the file selected by this click.
         val track = AudioTrackIdentity(meta?.title ?: song?.name.orEmpty(),
             meta?.artist ?: song?.artist.orEmpty(), meta?.album, meta?.durationMs ?: song?.duration)
-        val source = metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_URI)
-            ?.takeIf { it.isNotBlank() } ?: metadata?.description?.mediaUri?.toString()
         button?.isEnabled = false
         activeJob = scope.launch {
             try {
-                val audio = withContext(Dispatchers.IO) { resolveAudio(context, source, track) }
+                val identitySong = LyricDataHub.immersiveSong()
+                val identity = "${LyricViewController.activePackage}/${identitySong?.id}/${identitySong?.name}/${identitySong?.artist}"
+                val response = prepare(context)
                 if (button != null && !button.isAttachedToWindow) return@launch
-                if (audio == null) {
-                    showMessage(context, R.string.control_music_tags_no_audio)
-                    return@launch
+                val latest = LyricDataHub.immersiveSong()
+                check(identity == "${LyricViewController.activePackage}/${latest?.id}/${latest?.name}/${latest?.artist}") {
+                    "曲目已变化，请重新点击歌名"
                 }
-                val resources = ControlUi.moduleResources(context)
-                val open = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(audio.uri, audio.mime)
-                    clipData = ClipData.newRawUri(track.title, audio.uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                if (!openDefault(context, open)) {
-                    context.startActivity(Intent.createChooser(open,
-                        resources.getString(R.string.control_music_tags_chooser))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                    Log.i("LyriconMusicTags", "Opened current audio with system chooser")
+                @Suppress("DEPRECATION")
+                val choices = response.getParcelableArrayList<Bundle>("choices").orEmpty()
+                if (choices.size == 1) {
+                    launchPrepared(context, response.getString("token").orEmpty(), choices.single().getString("choice_id").orEmpty())
+                } else {
+                    val cover = withContext(Dispatchers.IO) {
+                        runCatching { ImmersiveArtwork.load(LyricViewController.activePackage, track.title, track.artist).bytes }.getOrNull()
+                    }
+                    context.startActivity(Intent().setClassName(BuildConfig.APP_PACKAGE_NAME, ImmersiveLyricsContract.MUSIC_TAG_CHOICES_ACTIVITY)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtras(response).putExtra("identity", identity).putExtra("cover", cover))
                 }
                 onOpened()
             } catch (e: CancellationException) {
                 throw e
-            } catch (_: AmbiguousAudio) {
-                showMessage(context, R.string.control_music_tags_ambiguous)
             } catch (e: Exception) {
                 YLog.error("MusicTagLauncher", "Cannot open current audio", e)
                 showMessage(context, R.string.control_music_tags_open_failed)
@@ -168,12 +168,6 @@ internal object MusicTagLauncher {
         }
         showMessage(context, R.string.control_music_tags_default_unavailable)
         return false
-    }
-
-    private fun resolveAudio(context: Context, source: String?, track: AudioTrackIdentity): AudioFile? {
-        val matches = resolveAudioChoices(context, source, track)
-        if (matches.size > 1) throw AmbiguousAudio()
-        return matches.singleOrNull()
     }
 
     internal fun resolveAudioChoices(context: Context, source: String?, track: AudioTrackIdentity): List<AudioFile> {

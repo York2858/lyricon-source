@@ -14,6 +14,48 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
 class TranslationLibraryStoreTest {
+    @Test fun reopeningTheDatabaseRestoresTheOffsetOfEachLyricVersion() = runBlocking {
+        cache.init(context)
+        val a = Song(name = "Track A", artist = "Artist",
+            lyrics = listOf(RichLyricLine(begin = 1000, end = 2000, text = "hello")))
+        val b = a.copy(name = "Track B")
+        val otherVersion = a.copy(lyrics = listOf(RichLyricLine(begin = 1200, end = 2200, text = "hello")))
+        cache.setLyricOffset(a, -931)
+        cache.setLyricOffset(b, 240)
+        val keyA = cache.getLyricOffset(a).first
+        cache.close()
+        cache.init(context)
+        assertEquals(-931, cache.getLyricOffset(a).second)
+        assertEquals(240, cache.getLyricOffset(b).second)
+        assertEquals(0, cache.getLyricOffset(otherVersion).second)
+        assertEquals(keyA, cache.getLyricOffset(a).first)
+        assertNotEquals(keyA, cache.getLyricOffset(otherVersion).first)
+    }
+
+    @Test fun lyricOffsetsApplyToExistingAndFutureVersionsWithoutChangingTheSourceTimeline() = runBlocking {
+        cache.init(context)
+        val song = Song(name = "Offset fixture", artist = "Artist", lyrics = listOf(
+            RichLyricLine(begin = 1000, end = 2000, text = "hello",
+                words = listOf(LyricWord(begin = 1000, end = 2000, text = "hello")))))
+        suspend fun saveVersion(id: String) {
+            cache.saveToDb(id, listOf(TranslationItem(0, "你好")), song, listOf("hello"))
+        }
+        saveVersion("existing")
+        store.favorite("existing", true)
+        cache.setLyricOffset(song, 300)
+        assertEquals(1300L, store.lines("existing", 0).lines.single().begin)
+        assertEquals(1300L, store.lines("existing", 0).lines.single().words.single().begin)
+        saveVersion("future")
+        assertEquals(1300L, store.lines("future", 0).lines.single().begin)
+        cache.setLyricOffset(song, -200)
+        assertEquals(800L, store.lines("existing", 0).lines.single().begin)
+        assertEquals(800L, store.lines("future", 0).lines.single().begin)
+        cache.setLyricOffset(song, 0)
+        assertEquals(1000L, store.lines("existing", 0).lines.single().begin)
+        assertTrue(store.versions(store.list(TranslationLibraryQuery()).songs.single().key, 0)
+            .versions.single { it.id == "existing" }.favorite)
+    }
+
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private lateinit var name: String
     private lateinit var cache: AiTranslationCache

@@ -20,6 +20,8 @@ class ControlFavoriteButtonTest {
                 override fun onSeekTo(position: Long) {}
                 override fun onFavorite(button: View) { favorites++ }
                 override fun onImmersiveLyrics(button: View) { lyrics++ }
+                override fun onCover(button: View) {}
+                override fun onTitle(button: View) {}
             }
             fun nodes(view: View): List<View> = listOf(view) + if (view is ViewGroup)
                 (0 until view.childCount).flatMap { nodes(view.getChildAt(it)) } else emptyList()

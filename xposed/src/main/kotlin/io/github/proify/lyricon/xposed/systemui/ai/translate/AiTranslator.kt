@@ -47,6 +47,8 @@ object AiTranslator {
     private var libraryEndpoint: TranslationLibraryEndpoint? = null
 
     fun libraryMessenger(): android.os.Messenger? = libraryEndpoint?.messenger
+    suspend fun syncLyricOffset(song: Song, offset: Int) { cache.setLyricOffset(song, offset) }
+    suspend fun getLyricOffset(song: Song): Pair<String, Int> = cache.getLyricOffset(song)
     private val scheduler = AiTranslationScheduler(
         cache = cache,
         generation = cacheGeneration,
@@ -81,7 +83,8 @@ object AiTranslator {
         song: Song,
         configs: AiConfig,
         options: AiTranslationOptions = AiTranslationOptions(),
-        onProgress: (Song) -> Unit = {}
+        onProgress: (Song) -> Unit = {},
+        forceRefresh: Boolean = false
     ): Song {
         if (!configs.isUsable) {
             Log.w(TAG, "Translation skipped: Configs not usable (missing API Key or disabled).")
@@ -90,7 +93,7 @@ object AiTranslator {
         if (song.lyrics.isNullOrEmpty()) return song
 
         return try {
-            translateSong(song, configs, options, onProgress)
+            translateSong(song, configs, options, onProgress, forceRefresh)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -117,20 +120,21 @@ object AiTranslator {
         song: Song,
         configs: AiConfig,
         options: AiTranslationOptions,
-        onProgress: (Song) -> Unit
+        onProgress: (Song) -> Unit,
+        forceRefresh: Boolean
     ): Song {
         val currentLyrics = song.lyrics ?: return song
         val originalLines = currentLyrics.map { it.text?.trim() ?: "" }
         if (AiTranslationPolicy.requestItems(originalLines, options, song).isEmpty()) return song
         val songContentId = AiTranslationKey.calculate(configs, options, song, originalLines)
 
-        cache.getFromMemory(songContentId)?.let {
+        if (!forceRefresh) cache.getFromMemory(songContentId)?.let {
             Log.d(TAG, "Memory cache hit for: ${song.name} [$songContentId]")
             cache.enrichMetadata(songContentId, song, originalLines, configs, options)
             return AiTranslationApplicator.apply(song, it)
         }
 
-        cache.getFromDb(songContentId)?.let {
+        if (!forceRefresh) cache.getFromDb(songContentId)?.let {
             Log.d(TAG, "Database cache hit for: ${song.name} [$songContentId]")
             cache.enrichMetadata(songContentId, song, originalLines, configs, options)
             // A deletion between the DB lookup and metadata update must not repopulate memory.
@@ -145,7 +149,8 @@ object AiTranslator {
         val googleConfig = AiConfig(model = "Google Translate", baseUrl = options.googleBaseUrl)
         val googleOptions = options.copy(stylePrompt = null)
         val googleKey = "google:$songContentId:${configs.apiKey.orEmpty().md5()}:" + AiTranslationKey.calculate(googleConfig, googleOptions, song, originalLines)
-        val cachedGoogle = if (options.googleFallback) (cache.getFromMemory(googleKey) ?: cache.getFromDb(googleKey))?.also {
+        if (forceRefresh) { scheduler.cancel(songContentId); googleScheduler.cancel(googleKey) }
+        val cachedGoogle = if (options.googleFallback && !forceRefresh) (cache.getFromMemory(googleKey) ?: cache.getFromDb(googleKey))?.also {
             cache.enrichMetadata(googleKey, song, originalLines, googleConfig, googleOptions)
         } else null
         val outcome = TranslationFallback.run(options.googleFallback,

@@ -46,9 +46,13 @@ import kotlin.math.roundToInt
 internal fun immersivePreferences(context: Context) = SettingsManager.getInstance(context).preferences
 internal fun Map<String, *>.flag(key: String, default: Boolean) = this[key] as? Boolean ?: default
 internal fun Map<String, *>.number(key: String, default: Int) = (this[key] as? Number)?.toInt() ?: default
+internal const val HEADER_TOP_KEY = "header_top"
+internal const val DEFAULT_HEADER_TOP = 28
+internal val HEADER_TOP_RANGE = 0..160
 
 @Composable
-internal fun ImmersiveSettingsContent(manager: SettingsManager, values: Map<String, *>) {
+internal fun ImmersiveSettingsContent(manager: SettingsManager, values: Map<String, *>,
+    onOffsetChanged: (Int) -> Unit = {}, offsetEnabled: Boolean = true) {
     var page by remember { mutableStateOf("main") }
     val scrollState = key(page) { rememberScrollState() }
     val context = LocalContext.current
@@ -145,10 +149,14 @@ internal fun ImmersiveSettingsContent(manager: SettingsManager, values: Map<Stri
                         PreferenceToggle("逐字精确跳转", "word_seek", false, manager, values)
                     }
                     PreferenceToggle("歌词触摸反馈", "touch_feedback", false, manager, values)
-                    PreferenceSlider("歌词偏移（毫秒）", "offset", 0, -5000..5000, manager, values)
+                    PreferenceSlider("歌词偏移（毫秒）", "offset", 0, -5000..5000, manager, values,
+                        summary = if (offsetEnabled) "按歌曲和歌词版本保存，停止调节 10 秒后同步到翻译库。" else "请先播放有歌词的歌曲。",
+                        onChanged = onOffsetChanged, enabled = offsetEnabled)
                 }
             }
             "style" -> SettingsCard {
+                PreferenceSlider("封面行位置", HEADER_TOP_KEY, DEFAULT_HEADER_TOP, HEADER_TOP_RANGE, manager, values,
+                    summary = "数值越大，封面行越靠下，留给歌词的空间越少。")
                 PreferenceSlider("歌名字号", "title_size", 22, 12..36, manager, values)
                 PreferenceSlider("歌手字号", "artist_size", 14, 10..28, manager, values)
                 PreferenceChoice(
@@ -226,7 +234,7 @@ internal fun ImmersiveSettingsContent(manager: SettingsManager, values: Map<Stri
             }
         }
         TextButton(
-            onClick = { manager.preferences.edit().clear().apply() },
+            onClick = { manager.preferences.edit().clear().apply(); onOffsetChanged(0) },
             modifier = Modifier.testTag("settings_reset")
         ) {
             Text("恢复默认设置")
@@ -341,7 +349,10 @@ private fun PreferenceSlider(
     default: Int,
     range: IntRange,
     manager: SettingsManager,
-    values: Map<String, *>
+    values: Map<String, *>,
+    summary: String? = null,
+    onChanged: ((Int) -> Unit)? = null,
+    enabled: Boolean = true,
 ) {
     val value = values.number(key, default).coerceIn(range)
     Column(
@@ -354,9 +365,19 @@ private fun PreferenceSlider(
             Text(title, fontSize = 15.sp)
             Text(value.toString(), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        if (summary != null) {
+            Text(summary, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         Slider(
+            enabled = enabled,
             value = value.toFloat(),
-            onValueChange = { manager.set(key, it.roundToInt()) },
+            onValueChange = { raw ->
+                val next = raw.roundToInt()
+                if (next != value) {
+                    if (key != "offset") manager.set(key, next)
+                    onChanged?.invoke(next)
+                }
+            },
             valueRange = range.first.toFloat()..range.last.toFloat()
         )
     }

@@ -21,13 +21,24 @@ class ImmersiveSettingsActivity : BaseActivity() {
             AppTheme {
                 val manager = remember { SettingsManager.getInstance(this) }
                 val values by manager.values.collectAsState()
+                val offsets = remember { ImmersiveOffsetStore.get(applicationContext) }
+                val savedOffsets by offsets.values.collectAsState()
+                val sourceKey = remember { intent.getStringExtra("source_key").orEmpty() }
+                val sourceToken = remember { intent.getStringExtra("source_token").orEmpty() }
+                val offset = (savedOffsets[sourceKey] as? Int)
+                    ?: intent.getIntExtra("lyric_offset", 0).coerceIn(-5000, 5000)
                 MaterialTheme(colorScheme = remember { darkColorScheme() }) {
                     Surface(Modifier.fillMaxSize()) {
                         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
                             TextButton(onClick = { finish() }, modifier = Modifier.padding(horizontal = 12.dp)) {
                                 Text("返回歌词")
                             }
-                            ImmersiveSettingsContent(manager, values)
+                            ImmersiveSettingsContent(manager, values + ("offset" to offset),
+                                offsetEnabled = sourceKey.isNotBlank() && sourceToken.isNotBlank(),
+                                onOffsetChanged = {
+                                    offsets.set(sourceKey, it)
+                                    ImmersiveLyricsCommands.syncOffset(applicationContext, sourceToken, sourceKey, it)
+                                })
                         }
                     }
                 }

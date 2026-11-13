@@ -72,6 +72,14 @@ class AiTranslationPostProcessor(
     override suspend fun process(song: Song, style: LyricStyle): Song = process(song, style) {}
 
     override suspend fun process(song: Song, style: LyricStyle, onProgress: (Song) -> Unit): Song {
+        return process(song, style, false, onProgress)
+    }
+
+    fun requireManualTranslation() {
+        check(configProvider.getActiveConfig()?.isUsable == true) { "请先在 AI 实验室配置可用的翻译服务" }
+    }
+
+    suspend fun process(song: Song, style: LyricStyle, force: Boolean, onProgress: (Song) -> Unit): Song {
         val settings = style.basicStyle
         val translationOptions = AiTranslationOptions(settings.aiTranslationTargetLanguage, settings.aiTranslationPrompt,
             settings.googleTranslationFallback, settings.googleTranslationBaseUrl)
@@ -80,11 +88,11 @@ class AiTranslationPostProcessor(
             return song
         }
         if (!song.lyrics.isNullOrEmpty()) AiTranslator.resolveWaitingForLyrics(song)
-        if (!settings.isAiTranslationEnable) return skipped("DISABLED", "AI 翻译未开启", "到词幕的 AI 实验室开启 AI 翻译。")
+        if (!force && !settings.isAiTranslationEnable) return skipped("DISABLED", "AI 翻译未开启", "到词幕的 AI 实验室开启 AI 翻译。")
         if (song.lyrics.isNullOrEmpty()) return skipped("NO_LYRICS", "当时尚未收到歌词，可能正在切歌或匹配", "播放器可能先发送歌曲信息，再发送完整歌词；歌词到达后会自动继续检查，并更新此记录。")
-        if (settings.isAiTranslationAutoIgnoreChinese && song.isFullyChinese())
+        if (!force && settings.isAiTranslationAutoIgnoreChinese && song.isFullyChinese())
             return skipped("CHINESE", "整首歌词为中文，已按“跳过中文”设置跳过；数字、标点不影响判定", "需要翻译中文歌时，可在 AI 实验室关闭“跳过中文”。")
-        if (isFullyTranslated(song, translationOptions.targetLanguage)) return skipped("ALREADY_TRANSLATED", "来源歌词中需要翻译的文字行都已有有效译文", "直接使用已有译文，无需再次调用翻译服务。")
+        if (!force && isFullyTranslated(song, translationOptions.targetLanguage)) return skipped("ALREADY_TRANSLATED", "来源歌词中需要翻译的文字行都已有有效译文", "直接使用已有译文，无需再次调用翻译服务。")
         if (song.lyrics.orEmpty().none { line -> line.text.orEmpty().any { it.isLetter() } })
             return skipped("NO_TEXT", "歌词只有空白、数字或标点，没有需要翻译的文字", "等待有实际歌词文字的歌曲，无需修改翻译配置。")
         val translationConfig = configProvider.getActiveConfig()
@@ -101,7 +109,7 @@ class AiTranslationPostProcessor(
             Log.i(TAG, "Starting AI translation for: ${song.name} - ${song.artist}")
 
             val translatedSong = try {
-                AiTranslator.translateSongSync(song, translationConfig, translationOptions, onProgress)
+                AiTranslator.translateSongSync(song, translationConfig, translationOptions, onProgress, forceRefresh = force)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

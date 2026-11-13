@@ -453,6 +453,8 @@ internal fun AppleMusicLyricLine(
                 glowRadius = primaryGlowRadius,
                 onWordClick = onWordClick,
                 onLongPress = onLongClick,
+                lineTiming = line.endMs?.takeIf { !line.isOpeningMetadata && it > line.timeMs }
+                    ?.let { line.timeMs..it },
                 modifier = Modifier.fillMaxWidth()
             )
         }

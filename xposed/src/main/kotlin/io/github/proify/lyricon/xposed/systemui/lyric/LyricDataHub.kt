@@ -42,6 +42,8 @@ object LyricDataHub : ActivePlayerListener {
 
     /** Shared enhanced lyrics, before display-only transformations such as translation-only. */
     private var cachedEnrichedSong: Song? = null
+    @Volatile private var cachedTranslationSource: Song? = null
+    private var manualTranslation = false
 
     /** 当前执行中的流水线任务 */
     private var activePipelineJob: Job? = null
@@ -69,6 +71,17 @@ object LyricDataHub : ActivePlayerListener {
         get() = pendingPublication || trackProgressGate.waitingForLyrics
 
     fun immersiveSong(): Song? = if (isWaitingForTrack) null else cachedEnrichedSong
+    fun translationSource(): Song? = if (isWaitingForTrack) null else cachedTranslationSource
+    fun isRetranslating(): Boolean = manualTranslation && activePipelineJob?.isActive == true
+
+    fun retranslate() {
+        check(!isWaitingForTrack) { "正在切歌，请稍后重试" }
+        check(!manualTranslation || activePipelineJob?.isActive != true) { "正在重新翻译，请稍后查看结果" }
+        val raw = cachedRawSong ?: error("尚未收到本地歌词支持传来的歌词")
+        check(!raw.lyrics.isNullOrEmpty()) { "当前歌曲没有可翻译的歌词" }
+        LyricDataProcessor.requireManualTranslation()
+        runProcessingPipeline(raw, force = true)
+    }
 
     init {
         SystemUIMediaUtils.registerListener(object : SystemUIMediaUtils.MediaControllerCallback {
@@ -100,10 +113,12 @@ object LyricDataHub : ActivePlayerListener {
      * 所有歌词加工都在后台协程执行，避免阻塞播放器回调线程。
      * @param rawSong 待加工的原始歌曲
      */
-    private fun runProcessingPipeline(rawSong: Song?) {
+    private fun runProcessingPipeline(rawSong: Song?, force: Boolean = false) {
         val currentVersion = versionCounter.incrementAndGet()
         activePipelineJob?.cancel()
-        pendingPublication = true
+        manualTranslation = force
+        if (rawSong == null) cachedTranslationSource = null
+        if (!force) pendingPublication = true
 
         activePipelineJob = scope.launch {
             try {
@@ -119,18 +134,24 @@ object LyricDataHub : ActivePlayerListener {
                 // 1. 后台前置加工：处理繁简、屏蔽词等基础显示数据
                 val preProcessed = LyricDataProcessor.executePreProcessing(song)
                 if (!isCurrentVersion(currentVersion)) return@launch
+                cachedTranslationSource = preProcessed
 
                 // 第一次分发：基础处理完成后尽快刷新 UI
-                publishSong(preProcessed, currentVersion)
+                if (!force) publishSong(preProcessed, currentVersion)
 
                 // 2. 后台后置流水线：处理 AI 翻译等耗时扩展
                 val finalSong =
-                    LyricDataProcessor.executePostProcessingPipeline(preProcessed, processingStyle) { partial ->
+                    if (force) LyricDataProcessor.retranslate(preProcessed, processingStyle) { partial ->
+                        publishSong(partial, currentVersion)
+                    } else LyricDataProcessor.executePostProcessingPipeline(preProcessed, processingStyle) { partial ->
                         publishSong(partial, currentVersion)
                     }
 
                 // The preferred result may equal the original while Google was shown in between.
                 if (isCurrentVersion(currentVersion)) {
+                    if (force && finalSong.lyrics.orEmpty().none {
+                        io.github.proify.lyricon.lyric.ai.translate.isUsableLyricTranslation(it.text, it.translation)
+                    }) return@launch
                     publishSong(finalSong, currentVersion)
                 } else {
                     logOutdatedPipeline(currentVersion, finalSong)

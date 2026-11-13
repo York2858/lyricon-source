@@ -14,6 +14,7 @@ import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -56,6 +57,12 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
     var playing by mutableStateOf(false); private set
     var demo by mutableStateOf(false); private set
     var status by mutableStateOf("正在连接词幕…"); private set
+    var sourceToken: String = ""; private set
+    var sourceKey by mutableStateOf(""); private set
+    var savedLyricOffset by mutableIntStateOf(0); private set
+    var retranslating by mutableStateOf(false); private set
+    private var retranslationSubmitting by mutableStateOf(false)
+    val translationBusy: Boolean get() = retranslating || retranslationSubmitting
     var duration by mutableStateOf(0L); private set
     var followRequest by mutableLongStateOf(0L); private set
     var playbackError by mutableStateOf<String?>(null); private set
@@ -74,8 +81,9 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
         (SystemClock.elapsedRealtime() - sampledAt).coerceIn(0, if (demo) 60_000 else if (pendingSeek != null) 3000 else 500)
     } else 0).coerceIn(0, duration.coerceAtLeast(0))
 
-    suspend fun observe() {
+    suspend fun observe(consumeMusicTagsRequest: () -> Boolean = { false }) {
         favoriteCheckedAt = 0L
+        var resumedOffsetKey = ""
         while (true) {
             if (demo) {
                 if (currentPosition() >= duration) seek(0)
@@ -90,6 +98,7 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
             }
             val response = requestSnapshot()
             if (response == null) {
+                resumedOffsetKey = ""
                 remote = null
                 identity = ""
                 favoriteTrack = null
@@ -103,6 +112,11 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
                 revision = -1
                 coverKey = ""
                 status = "无法连接词幕，请确认模块已激活并重启系统界面"
+                sourceToken = ""
+                sourceKey = ""
+                savedLyricOffset = 0
+                retranslating = false
+                retranslationSubmitting = false
                 delay(1500)
             } else if (!demo) {
                 val updatedSong = if (response.containsKey("song")) withContext(Dispatchers.Default) {
@@ -117,6 +131,18 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
                 song = updatedSong
                 revision = response.getLong("revision")
                 identity = response.getString("identity").orEmpty()
+                val nextSourceToken = response.getString("source_token").orEmpty()
+                if (sourceToken != nextSourceToken) retranslationSubmitting = false
+                sourceToken = nextSourceToken
+                val nextSourceKey = response.getString("source_key").orEmpty()
+                if (sourceKey != nextSourceKey) retranslationSubmitting = false
+                sourceKey = nextSourceKey
+                savedLyricOffset = response.getInt("lyric_offset").coerceIn(-5000, 5000)
+                retranslating = response.getBoolean("retranslating")
+                if (sourceKey.isNotBlank() && sourceKey != resumedOffsetKey) {
+                    resumedOffsetKey = sourceKey
+                    ImmersiveLyricsCommands.resumeOffset(getApplication(), sourceToken, sourceKey)
+                }
                 seekAndPlaySupported = response.getBoolean("seek_and_play")
                 title = response.getString("title").orEmpty()
                 artist = response.getString("artist").orEmpty()
@@ -159,8 +185,26 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
                     }
                 }
                 status = response.getString("error") ?: "暂无完整歌词，请在音乐应用中播放歌曲并启用词幕歌词源"
+                if (consumeMusicTagsRequest()) openMusicTags()
                 delay(250)
             }
+        }
+    }
+
+    fun retranslate() {
+        if (translationBusy || sourceToken.isBlank() || song?.lyrics.isNullOrEmpty() || demo) return
+        val token = sourceToken
+        retranslationSubmitting = true
+        viewModelScope.launch {
+            try {
+                val reply = request(Contract.RETRANSLATE, Bundle().apply { putString("source_token", token) }, 12_000)
+                if (sourceToken != token) return@launch
+                check(reply?.getBoolean("accepted") == true) { reply?.getString("error") ?: "重新翻译未响应，请重试" }
+                retranslating = true
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                if (sourceToken == token) playbackError = error.message ?: "无法开始重新翻译"
+            } finally { if (sourceToken == token) retranslationSubmitting = false }
         }
     }
 

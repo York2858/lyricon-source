@@ -13,6 +13,9 @@
 # 保留 Xposed hook 相关类（防止混淆和 R8 优化）
 -keep class io.github.proify.lyricon.xposed.hook.** { *; }
 -keep class io.github.proify.lyricon.xposed.systemui.hook.** { *; }
+-keepclassmembers class * implements io.github.libxposed.api.XposedInterface$Hooker {
+    public java.lang.Object intercept(io.github.libxposed.api.XposedInterface$Chain);
+}
 
 # 忽略 Xposed 框架的警告（避免因注解缺失导致构建中断）
 -dontwarn io.github.libxposed.api.**

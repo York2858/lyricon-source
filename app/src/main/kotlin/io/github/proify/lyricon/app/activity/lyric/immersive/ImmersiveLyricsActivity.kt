@@ -1,6 +1,7 @@
 package io.github.proify.lyricon.app.activity.lyric.immersive
 
 import android.os.Bundle
+import android.content.Intent
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.runtime.LaunchedEffect
@@ -8,6 +9,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import io.github.proify.lyricon.app.activity.BaseActivity
+import io.github.proify.lyricon.app.bridge.ImmersiveLyricsContract
 import io.github.proify.lyricon.app.compose.theme.AppTheme
 
 class ImmersiveLyricsActivity : BaseActivity() {
@@ -18,11 +20,21 @@ class ImmersiveLyricsActivity : BaseActivity() {
         setContent {
             AppTheme {
                 LaunchedEffect(state) {
-                    lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { state.observe() }
+                    lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                        state.observe {
+                            val key = ImmersiveLyricsContract.EXTRA_OPEN_MUSIC_TAGS
+                            intent.getBooleanExtra(key, false).also { if (it) intent.removeExtra(key) }
+                        }
+                    }
                 }
                 ImmersiveLyricsScreen(state)
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
     }
 
     override fun onResume() {

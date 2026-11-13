@@ -6,6 +6,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -20,10 +21,12 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.res.painterResource
 import io.github.proify.lyricon.app.R
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.Role
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
@@ -51,6 +54,8 @@ internal fun ImmersiveLyricsScreen(state: ImmersiveLyricsState) {
     }
     val manager = remember(context) { SettingsManager.getInstance(context) }
     val preferences by manager.values.collectAsState()
+    val offsetStore = remember(context) { ImmersiveOffsetStore.get(context) }
+    val savedOffsets by offsetStore.values.collectAsState()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var visible by remember { mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) }
     val view = LocalView.current
@@ -94,9 +99,12 @@ internal fun ImmersiveLyricsScreen(state: ImmersiveLyricsState) {
     val translationFont = rememberHalcyonFont(preferences["translation_font"] as? String, fontWeight)
     val lyrics = remember(state.song) { state.song?.lyrics.orEmpty().toHalcyonLyrics() }
     val position = state.currentPosition()
-    val offset = preferences.number("offset", 0).toLong()
+    val offset = (if (state.sourceKey.isBlank()) 0 else
+        (savedOffsets[state.sourceKey] as? Int) ?: state.savedLyricOffset).coerceIn(-5000, 5000).toLong()
     val index = lyrics.indexOfLast { it.timeMs <= position - offset }.coerceAtLeast(0)
     val palette = remember(state.cover) { PlayerPalette.from(state.cover).withCoverContentColor() }
+    val headerTop = preferences.number(HEADER_TOP_KEY, DEFAULT_HEADER_TOP).coerceIn(HEADER_TOP_RANGE)
+        .dp.coerceAtMost(LocalConfiguration.current.screenHeightDp.dp * .25f)
     val residentPreferences = rememberAppleMusicLyricsViewPreferences(manager)
     val livePosition = remember(state, offset) { { (state.currentPosition() - offset).coerceAtLeast(0L) } }
     CompositionLocalProvider(
@@ -107,7 +115,7 @@ internal fun ImmersiveLyricsScreen(state: ImmersiveLyricsState) {
         Box(Modifier.fillMaxSize().background(palette.middle)) {
             HalcyonBackdrop(state.cover, palette, preferences, state.playing && visible, position)
             Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 28.dp)) {
-                Row(Modifier.fillMaxWidth().padding(top = 28.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(top = headerTop), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = .1f))
                         .clickable(onClickLabel = "打开音乐解读") { context.startActivity(state.explanationIntent(context)) }
                         .semantics { contentDescription = "打开音乐解读" }, contentAlignment = Alignment.Center) {
@@ -129,7 +137,9 @@ internal fun ImmersiveLyricsScreen(state: ImmersiveLyricsState) {
                             null, Modifier.size(25.dp), tint = palette.onBackground.copy(alpha = if (state.favorite) 1f else .92f))
                     }
                     IconButton(onClick = {
-                        context.startActivity(android.content.Intent(context, ImmersiveSettingsActivity::class.java))
+                        context.startActivity(android.content.Intent(context, ImmersiveSettingsActivity::class.java)
+                            .putExtra("source_token", state.sourceToken)
+                            .putExtra("source_key", state.sourceKey).putExtra("lyric_offset", offset.toInt()))
                     }, modifier = Modifier.size(40.dp).semantics { contentDescription = "歌词设置" }) {
                         Canvas(Modifier.size(24.dp)) {
                             repeat(3) { dot -> drawCircle(palette.onBackground, 2.dp.toPx(), Offset(center.x, center.y + (dot - 1) * 6.dp.toPx())) }
@@ -161,6 +171,26 @@ internal fun ImmersiveLyricsScreen(state: ImmersiveLyricsState) {
                         followRequest = state.followRequest, manualScrollRecenterDelayMs = 8000L,
                         modifier = Modifier.fillMaxSize().testTag("immersive_lyrics")
                     )
+                    if (lyrics.isNotEmpty()) {
+                        val busy = state.translationBusy
+                        val enabled = !busy && !state.demo && state.sourceToken.isNotBlank()
+                        Box(Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp).size(44.dp)
+                            .testTag("immersive_retranslate")
+                            .semantics {
+                                contentDescription = "重新翻译"
+                                stateDescription = if (busy) "翻译中" else "重新翻译当前歌词"
+                            }
+                            .clickable(enabled = enabled, role = Role.Button,
+                                interactionSource = remember { MutableInteractionSource() }, indication = null,
+                                onClick = state::retranslate), contentAlignment = Alignment.Center) {
+                            if (busy && visible) {
+                                CircularProgressIndicator(Modifier.size(24.dp), color = palette.onBackground, strokeWidth = 2.dp)
+                            } else {
+                                Icon(painterResource(R.drawable.halcyon_retranslate), null, Modifier.size(36.dp),
+                                    tint = palette.onBackground.copy(alpha = if (enabled) 1f else .4f))
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -171,7 +201,7 @@ internal fun ImmersiveLyricsScreen(state: ImmersiveLyricsState) {
 }
 
 @Composable
-private fun rememberHalcyonFont(path: String?, weight: Int): FontFamily {
+internal fun rememberHalcyonFont(path: String?, weight: Int): FontFamily {
     val context = LocalContext.current
     return remember(path, context, weight) {
         if (path == "system") return@remember FontFamily.Default

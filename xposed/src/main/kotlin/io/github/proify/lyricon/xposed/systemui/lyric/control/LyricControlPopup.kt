@@ -23,6 +23,7 @@ import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.subscriber.ActivePlayerListener
 import io.github.proify.lyricon.subscriber.ProviderInfo
 import io.github.proify.lyricon.xposed.logger.YLog
+import io.github.proify.lyricon.xposed.systemui.ai.explain.AiExplainLauncher
 import io.github.proify.lyricon.xposed.BuildConfig
 import io.github.proify.lyricon.app.bridge.ImmersiveLyricsContract
 import io.github.proify.lyricon.xposed.systemui.lyric.LyricDataHub
@@ -129,9 +130,21 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
         }
 
         override fun onImmersiveLyrics(button: View) {
+            openImmersiveLyrics(button)
+        }
+
+        override fun onCover(button: View) {
+            AiExplainLauncher.launch(button, LyricDataHub.immersiveSong()) { dismiss() }
+        }
+
+        override fun onTitle(button: View) {
+            MusicTagLauncher.launch(button) { dismiss() }
+        }
+
+        private fun openImmersiveLyrics(button: View) {
             val context = button.context
             val intent = Intent().setClassName(BuildConfig.APP_PACKAGE_NAME, ImmersiveLyricsContract.ACTIVITY_CLASS)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             runCatching { context.startActivity(intent) }
                 .onSuccess { dismiss() }
                 .onFailure {

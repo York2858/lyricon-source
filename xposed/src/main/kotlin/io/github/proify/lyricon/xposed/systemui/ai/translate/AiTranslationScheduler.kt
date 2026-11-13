@@ -78,6 +78,8 @@ internal class AiTranslationScheduler(
         }
     }
 
+    fun cancel(key: String) { synchronized(lock) { jobs[key]?.let(::cancelLocked) } }
+
     fun cancelAll() {
         synchronized(lock) {
             pending.toList().forEach(::cancelLocked)

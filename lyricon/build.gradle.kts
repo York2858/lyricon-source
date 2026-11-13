@@ -85,6 +85,7 @@ configure<ApplicationExtension> {
 dependencies {
     implementation(project(":app"))
     implementation(project(":xposed"))
+    compileOnly(libs.libxposed.api)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

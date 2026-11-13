@@ -70,6 +70,29 @@ internal class AiTranslationCache(
         memory[key] = items
     }
 
+    suspend fun setLyricOffset(song: Song, offset: Int) = dbMutex.withLock {
+        val db = checkNotNull(dbHelper?.writableDatabase) { "翻译库尚未连接" }
+        val timing = timings(song)
+        check(timing.isNotEmpty()) { "当前歌词没有可同步的时间轴" }
+        val key = io.github.proify.lyricon.lyric.ai.translate.translationTimelineKey(
+            song.name.orEmpty(), song.artist.orEmpty(), song.lyrics.orEmpty().map { it.text.orEmpty() }, timing)
+        db.insertWithOnConflict("lyric_offsets", null, ContentValues().apply {
+            put("source_key", key); put("offset_ms", offset.coerceIn(-5000, 5000))
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    suspend fun getLyricOffset(song: Song): Pair<String, Int> = dbMutex.withLock {
+        val db = checkNotNull(dbHelper?.readableDatabase) { "翻译库尚未连接" }
+        val timing = timings(song)
+        if (timing.isEmpty()) return@withLock "" to 0
+        val key = io.github.proify.lyricon.lyric.ai.translate.translationTimelineKey(
+            song.name.orEmpty(), song.artist.orEmpty(), song.lyrics.orEmpty().map { it.text.orEmpty() }, timing)
+        val offset = db.rawQuery("SELECT offset_ms FROM lyric_offsets WHERE source_key = ?", arrayOf(key)).use {
+            if (it.moveToFirst()) it.getInt(0).coerceIn(-5000, 5000) else 0
+        }
+        key to offset
+    }
+
     suspend fun getFromDb(key: String): List<TranslationItem>? = dbMutex.withLock {
         val db = dbHelper?.readableDatabase ?: return null
         return runCatching {
@@ -253,7 +276,7 @@ internal class AiTranslationCache(
 
         companion object {
             const val DATABASE_NAME = "lyricon_translation.db"
-            const val DATABASE_VERSION = 5
+            const val DATABASE_VERSION = 6
             const val TABLE_NAME = "ai_cache"
             const val COLUMN_ID = "song_id"
             const val COLUMN_DATA = "translation_json"
@@ -289,9 +312,15 @@ internal class AiTranslationCache(
             """.trimIndent()
             )
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_timestamp ON $TABLE_NAME($COLUMN_TIMESTAMP)")
+            createOffsets(db)
+        }
+
+        private fun createOffsets(db: SQLiteDatabase) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS lyric_offsets (source_key TEXT PRIMARY KEY, offset_ms INTEGER NOT NULL DEFAULT 0)")
         }
 
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            if (oldVersion < 6) createOffsets(db)
             if (oldVersion < 2) {
                 listOf("title", "artist", "target_language", "model", "original_json", "search_text").forEach {
                     db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $it TEXT NOT NULL DEFAULT ''")

@@ -64,6 +64,8 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         fun onNext()
         fun onSeekTo(position: Long)
         fun onImmersiveLyrics(button: View)
+        fun onCover(button: View)
+        fun onTitle(button: View)
         fun onFavorite(button: View)
     }
 
@@ -157,10 +159,12 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
             background = ControlUi.roundedDrawable(CARD_COLOR, CARD_RADIUS_DP.dp.toFloat())
             addView(backdrop, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
             addView(content, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+            setOnClickListener { actionListener?.onImmersiveLyrics(it) }
         }
 
         coverView = ImageView(context).apply {
-            contentDescription = "专辑封面"
+            contentDescription = "打开音乐解读"
+            setOnClickListener { actionListener?.onCover(it) }
             layoutParams = LinearLayout.LayoutParams(COVER_SIZE_DP.dp, COVER_SIZE_DP.dp)
             scaleType = ImageView.ScaleType.CENTER_CROP
             clipToOutline = true
@@ -171,7 +175,8 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         }
 
         titleView = MarqueeTitleView(context).apply {
-            contentDescription = "歌名"
+            contentDescription = "歌名，打开 Lyrico"
+            setOnClickListener { actionListener?.onTitle(it) }
             textSize = TITLE_TEXT_SIZE_SP.sp
             textColor = TEXT_COLOR_PRIMARY
             textTypeface = Typeface.create(Typeface.DEFAULT,500,false)
