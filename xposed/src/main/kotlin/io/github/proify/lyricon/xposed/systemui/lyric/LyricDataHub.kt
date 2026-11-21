@@ -9,6 +9,8 @@ package io.github.proify.lyricon.xposed.systemui.lyric
 import android.util.Log
 import android.media.MediaMetadata
 import android.media.session.MediaController
+import android.media.session.MediaSession
+import io.github.proify.lyricon.app.bridge.FavoriteTrack
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.lyric.style.LyricStyle
 import io.github.proify.lyricon.subscriber.ActivePlayerListener
@@ -83,6 +85,29 @@ object LyricDataHub : ActivePlayerListener {
         runProcessingPipeline(raw, force = true)
     }
 
+    internal fun requestLockscreenTranslation(token: MediaSession.Token, track: FavoriteTrack): String {
+        if (isWaitingForTrack || providerInfo?.playerPackageName != track.player ||
+            SystemUIMediaUtils.getController(track.player)?.sessionToken != token
+        ) return "当前歌曲的歌词还未就绪"
+
+        val raw = cachedRawSong ?: return "当前歌曲没有可翻译的歌词"
+        val artist = raw.artist.orEmpty().trim()
+        if (raw.name?.trim()?.equals(track.title.trim(), ignoreCase = true) != true ||
+            (artist.isNotEmpty() && track.artist.isNotBlank() && !artist.equals(track.artist.trim(), ignoreCase = true))
+        ) return "当前歌曲的歌词还未就绪"
+
+        return when (lockscreenTranslationDecision(raw, cachedEnrichedSong)) {
+            LockscreenTranslationDecision.NO_TEXT -> "当前歌曲没有可翻译的歌词"
+            LockscreenTranslationDecision.HAS_TRANSLATION -> "当前歌曲已有译文，翻译开关暂未就绪"
+            LockscreenTranslationDecision.CHINESE -> "当前歌词判定为中文，已跳过翻译"
+            LockscreenTranslationDecision.REQUEST -> {
+                if (activePipelineJob?.isActive == true) return "正在处理当前歌词，请稍后再试"
+                retranslate()
+                "已请求翻译当前歌词"
+            }
+        }
+    }
+
     init {
         SystemUIMediaUtils.registerListener(object : SystemUIMediaUtils.MediaControllerCallback {
             override fun onMediaChanged(controller: MediaController, metadata: MediaMetadata) {
@@ -115,6 +140,7 @@ object LyricDataHub : ActivePlayerListener {
      */
     private fun runProcessingPipeline(rawSong: Song?, force: Boolean = false) {
         val currentVersion = versionCounter.incrementAndGet()
+        val sourceProvider = providerInfo
         activePipelineJob?.cancel()
         manualTranslation = force
         if (rawSong == null) cachedTranslationSource = null
@@ -137,14 +163,15 @@ object LyricDataHub : ActivePlayerListener {
                 cachedTranslationSource = preProcessed
 
                 // 第一次分发：基础处理完成后尽快刷新 UI
-                if (!force) publishSong(preProcessed, currentVersion)
+                if (!force) publishSong(preProcessed, currentVersion,
+                    NeutronLyricWriteback.prepare(sourceProvider, preProcessed, publishOriginal = true))
 
                 // 2. 后台后置流水线：处理 AI 翻译等耗时扩展
                 val finalSong =
                     if (force) LyricDataProcessor.retranslate(preProcessed, processingStyle) { partial ->
-                        publishSong(partial, currentVersion)
+                        publishSong(partial, currentVersion, NeutronLyricWriteback.prepare(sourceProvider, partial))
                     } else LyricDataProcessor.executePostProcessingPipeline(preProcessed, processingStyle) { partial ->
-                        publishSong(partial, currentVersion)
+                        publishSong(partial, currentVersion, NeutronLyricWriteback.prepare(sourceProvider, partial))
                     }
 
                 // The preferred result may equal the original while Google was shown in between.
@@ -152,7 +179,7 @@ object LyricDataHub : ActivePlayerListener {
                     if (force && finalSong.lyrics.orEmpty().none {
                         io.github.proify.lyricon.lyric.ai.translate.isUsableLyricTranslation(it.text, it.translation)
                     }) return@launch
-                    publishSong(finalSong, currentVersion)
+                    publishSong(finalSong, currentVersion, NeutronLyricWriteback.prepare(sourceProvider, finalSong))
                 } else {
                     logOutdatedPipeline(currentVersion, finalSong)
                 }
@@ -170,12 +197,13 @@ object LyricDataHub : ActivePlayerListener {
         if (LyricPrefs.floatingBaseStyle.manualFloatingLyricEnabled) LyricPrefs.floatingLyricStyle
         else LyricPrefs.getLyricStyle()
 
-    private fun publishSong(song: Song?, version: Int) {
+    private fun publishSong(song: Song?, version: Int, writeback: NeutronLyricWriteback.Update? = null) {
         StatusBarViewManager.runOnMainThread {
             if (!isCurrentVersion(version)) return@runOnMainThread
             if (trackProgressGate.waitingForLyrics) return@runOnMainThread
             cachedEnrichedSong = song
             pendingPublication = false
+            writeback?.let(NeutronLyricWriteback::send)
             dispatchSong(song?.let { LyricDataProcessor.executeDisplayProcessing(it, currentDisplayStyle()) })
             listeners.forEach { it.onPlaybackStateChanged(playing) }
         }

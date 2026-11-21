@@ -8,6 +8,7 @@ import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSession
 import android.os.Looper
+import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
@@ -27,6 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -134,6 +136,7 @@ internal object OplusMediaFavoriteHooker {
         private val isCurrent: (MediaController) -> Boolean = { true },
         private val logTag: String = TAG,
         private val onAvailabilityChanged: (Boolean) -> Unit = {},
+        private val retryReadAfterMs: Long = 0L,
         private val tint: () -> ColorStateList,
     ) : ImageButton(context) {
         private val icons = ControlUi.moduleResources(context)
@@ -193,7 +196,7 @@ internal object OplusMediaFavoriteHooker {
             if (toggle) isEnabled = false
             job = scope.launch {
                 try {
-                    val reply = if (toggle) FavoriteClient.toggle(clientContext, current) else FavoriteClient.request(clientContext, current)
+                    val reply = if (toggle) FavoriteClient.toggle(clientContext, current) else readFavorite(session, current)
                     if (controller?.sessionToken != session.sessionToken || track != current ||
                         session.currentTrack() != current || !isCurrent(session)
                     ) return@launch
@@ -219,6 +222,19 @@ internal object OplusMediaFavoriteHooker {
                 } finally {
                     if (toggle) writing = false
                 }
+            }
+        }
+
+        private suspend fun readFavorite(session: MediaController, current: FavoriteTrack): Bundle {
+            try {
+                return FavoriteClient.request(clientContext, current)
+            } catch (error: Exception) {
+                if (error is CancellationException || retryReadAfterMs <= 0) throw error
+                delay(retryReadAfterMs)
+                if (!visibleInWindow || controller?.sessionToken != session.sessionToken ||
+                    track != current || session.currentTrack() != current || !isCurrent(session)
+                ) throw CancellationException()
+                return FavoriteClient.request(clientContext, current)
             }
         }
 

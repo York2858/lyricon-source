@@ -33,6 +33,7 @@ import io.github.proify.lyricon.xposed.systemui.hook.StatusBarDisableHooker
 import io.github.proify.lyricon.xposed.systemui.hook.StatusBarViewResolver
 import io.github.proify.lyricon.xposed.systemui.hook.ViewVisibilityTracker
 import io.github.proify.lyricon.xposed.systemui.lyric.LyricDataHub
+import io.github.proify.lyricon.xposed.systemui.lyric.NeutronLyricWriteback
 import io.github.proify.lyricon.xposed.systemui.lyric.LyricPrefs
 import io.github.proify.lyricon.xposed.systemui.lyric.FloatingLyricController
 import io.github.proify.lyricon.xposed.systemui.lyric.LyricViewController
@@ -183,6 +184,7 @@ object SystemUIHooker : PackageHooker() {
 
     private fun initLyriconService() {
         val context = appContext ?: return
+        NeutronLyricWriteback.initialize(context)
 
         val service = ModuleEntry.instance
         val defaultSp = service.getRemotePreferences("default")
