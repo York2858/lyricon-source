@@ -24,6 +24,9 @@ import io.github.proify.lyricon.app.activity.lyric.immersive.halcyon.SettingsMan
 private const val BEAUTIFUL_LYRICS_NEUTRAL_FALLBACK_SHARE = 0.90f
 private const val BEAUTIFUL_LYRICS_NEUTRAL_MAX_CHANNEL_SPREAD = 32
 
+/** 模糊大画布约 30 FPS 足够平滑，可显著降低高刷屏上的绘制开销。 */
+private const val BEAUTIFUL_LYRICS_FRAME_INTERVAL_MS = 32L
+
 @Composable
 internal fun BeautifulLyricsDynamicBackground(
     palette: PlayerPalette,
@@ -44,7 +47,8 @@ internal fun BeautifulLyricsDynamicBackground(
     val activeDrift = rememberSharedFlowProgress(
         durationMillis = durationMs,
         animate = animate,
-        fallback = 0.42f
+        fallback = 0.42f,
+        frameIntervalMs = BEAUTIFUL_LYRICS_FRAME_INTERVAL_MS
     )
     val pulse = if (isPlaying) {
         0.5f + 0.5f * kotlin.math.sin(positionMs / 760.0).toFloat()

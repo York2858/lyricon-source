@@ -73,21 +73,29 @@ internal object MusicTagLauncher {
         }
     }
 
-    fun launchPrepared(context: Context, token: String, choiceId: String) {
+    fun launchPrepared(context: Context, token: String, choiceId: String, target: String? = null) {
         val item = prepared[token] ?: error("版本选择已失效，请重新点击歌名")
         check(item.expires >= SystemClock.elapsedRealtime()) { "版本选择已过期，请重新点击歌名" }
-        val open = item.choices[choiceId] ?: error("无效的歌曲版本，请重新选择")
+        val open = Intent(item.choices[choiceId] ?: error("无效的歌曲版本，请重新选择"))
         check(readableAudio(context, requireNotNull(open.data)) != null) { "所选音乐文件已无法读取，请重新查找" }
-        if (!openDefault(context, open)) {
-            @Suppress("DEPRECATION")
-            val targets = context.packageManager.queryIntentActivities(open, PackageManager.MATCH_DEFAULT_ONLY)
-                .filter { (it.activityInfo.packageName == "com.lonx.lyrico" || it.activityInfo.packageName.startsWith("com.lonx.lyrico.")) &&
-                    it.activityInfo.exported && it.activityInfo.enabled && it.activityInfo.applicationInfo.enabled }
-                .sortedWith(compareBy({ it.activityInfo.packageName != "com.lonx.lyrico" }, { it.activityInfo.packageName }))
-            val target = targets.firstOrNull()?.activityInfo ?: error("未找到支持所选音乐文件的 Lyrico，请先安装")
-            context.startActivity(Intent(open).setComponent(ComponentName(target.packageName, target.name)))
+        if (target.isNullOrBlank()) {
+            if (!openDefault(context, open)) launchLyrico(context, open)
+        } else {
+            // A concrete Lyrico page is requested: bypass the saved editor and force Lyrico.
+            open.putExtra(ImmersiveLyricsContract.EXTRA_OPEN_TARGET, target)
+            launchLyrico(context, open)
         }
         prepared.remove(token)
+    }
+
+    private fun launchLyrico(context: Context, open: Intent) {
+        @Suppress("DEPRECATION")
+        val targets = context.packageManager.queryIntentActivities(open, PackageManager.MATCH_DEFAULT_ONLY)
+            .filter { (it.activityInfo.packageName == "com.lonx.lyrico" || it.activityInfo.packageName.startsWith("com.lonx.lyrico.")) &&
+                it.activityInfo.exported && it.activityInfo.enabled && it.activityInfo.applicationInfo.enabled }
+            .sortedWith(compareBy({ it.activityInfo.packageName != "com.lonx.lyrico" }, { it.activityInfo.packageName }))
+        val target = targets.firstOrNull()?.activityInfo ?: error("未找到支持所选音乐文件的 Lyrico，请先安装")
+        context.startActivity(Intent(open).setComponent(ComponentName(target.packageName, target.name)))
     }
 
     fun launch(button: View, onOpened: () -> Unit) {

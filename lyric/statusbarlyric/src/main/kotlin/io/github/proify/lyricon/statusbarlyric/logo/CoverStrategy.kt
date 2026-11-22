@@ -156,7 +156,8 @@ class CoverStrategy(
     }
 
     private fun checkAnimationState() {
-        if (view.animationsEnabled && view.windowVisibility == View.VISIBLE && view.isAttachedToWindow && view.isShown && isEffective && style == LogoStyle.Companion.STYLE_COVER_CIRCLE) {
+        val rotateEnabled = view.lyricStyle?.packageStyle?.logo?.rotateCover != false
+        if (rotateEnabled && view.animationsEnabled && view.windowVisibility == View.VISIBLE && view.isAttachedToWindow && view.isShown && isEffective && style == LogoStyle.Companion.STYLE_COVER_CIRCLE) {
             startAnimation()
         } else {
             stopAnimation()

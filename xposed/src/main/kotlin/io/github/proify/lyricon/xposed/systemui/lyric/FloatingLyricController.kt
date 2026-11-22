@@ -10,8 +10,10 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.view.Gravity
-import android.view.ViewGroup
+import android.view.View
+import android.view.ViewTreeObserver
 import android.view.WindowManager
+import android.widget.FrameLayout
 import io.github.proify.android.extensions.dp
 import io.github.proify.lyricon.app.bridge.AppBridgeConstants
 import io.github.proify.lyricon.colorextractor.palette.ColorExtractor
@@ -48,7 +50,7 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
     private var layoutParams: WindowManager.LayoutParams? = null
     private var currentLyricStyle: LyricStyle? = null
 
-    private var windowAttached = false
+    private var lyricWindow: FloatingLyricWindow? = null
     private var floatingLyricEnabled = false
 
     private var sourceStatusColor: StatusColor = StatusColor()
@@ -68,10 +70,8 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
                 isSleepMode = ScreenStateMonitor.state == ScreenStateMonitor.ScreenState.OFF
                 // 悬浮窗图标不跟随流体云胶囊隐藏
                 logoView.capsuleHideEnabled = false
-                // Visibility changes need a sync even when the window bounds stay unchanged.
-                viewTreeObserver.addOnGlobalLayoutListener {
-                    syncControlWindow()
-                }
+                onPositionDemandChanged = { LyricViewController.refreshPositionDemand() }
+                onPlayingChanged = { syncWindows() }
                 _lyricView = this
             }
         }
@@ -86,10 +86,7 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
         if (layoutParams == null) {
             layoutParams = buildLayoutParams(lyricStyle)
         }
-        if (!windowAttached) {
-            attachWindowIfNeeded()
-            ScreenStateMonitor.addListener(this)
-        }
+        ScreenStateMonitor.addListener(this)
         updateLyricStyle(lyricStyle)
     }
 
@@ -97,8 +94,6 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
 
     fun updateLyricStyle(lyricStyle: LyricStyle) {
         currentLyricStyle = lyricStyle
-        floatingLyricEnabled = lyricStyle.basicStyle.manualFloatingLyricEnabled
-
         val view = lyricView ?: return
         view.textView.isFloatingLyric = true
         view.forceAutoWidth = true
@@ -112,15 +107,8 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
         lp.flags = WINDOW_FLAGS
         applyLayoutPosition(lp, lyricStyle)
 
-        if (windowAttached) {
-            runCatching {
-                windowManager?.updateViewLayout(view, lp)
-            }.onFailure {
-                YLog.error(TAG, "updateViewLayout failed", it)
-                windowAttached = false
-                attachWindowIfNeeded()
-            }
-        }
+        runCatching { lyricWindow?.updateLayout() }
+            .onFailure { YLog.error(TAG, "Update floating lyric window failed", it) }
 
         if (shouldUseCoverTextColor(lyricStyle)) {
             updateCoverThemeColors(view.logoView.coverFile)
@@ -181,50 +169,79 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
 
     private fun syncVisibilityByMode() {
         val view = lyricView ?: return
-        // 悬浮模式与歌词总开关同时开启时才允许显示。
-        view.isDisabledVisible = !floatingLyricEnabled || !LyricPrefs.baseStyle.lyricsEnabled
-        view.updateVisibility()
+        val disabled = !floatingLyricEnabled
+        if (view.isDisabledVisible == disabled) view.updateVisibility()
+        else view.isDisabledVisible = disabled
+        syncWindows()
+    }
+
+    private fun syncWindows() {
+        val view = _lyricView ?: return
+        runCatching {
+            if (floatingLyricEnabled && lyricWindow == null) {
+                val wm = windowManager ?: return
+                val params = layoutParams ?: return
+                lyricWindow = FloatingLyricWindow(wm, view, params, ::syncControlWindow)
+            }
+            lyricWindow?.setEnabled(floatingLyricEnabled)
+        }.onFailure { YLog.error(TAG, "Set floating lyric window enabled=$floatingLyricEnabled failed", it) }
         syncControlWindow()
     }
 
-    private fun isControlEnabled(): Boolean {
-        val style = currentLyricStyle ?: return false
-        val view = _lyricView ?: return false
-        val logo = view.logoView
-        return floatingLyricEnabled && LyricPrefs.baseStyle.lyricsEnabled &&
-                style.basicStyle.floatingControlEnabled && LyricPrefs.gestureEnabled &&
-                ScreenStateMonitor.state != ScreenStateMonitor.ScreenState.OFF &&
-                !view.isHideOnLockScreen() && view.isShown && logo.isShown &&
-                style.packageStyle.logo.enable && logo.width > 0 && logo.height > 0
+    private fun controlAnchor(): View? {
+        val style = currentLyricStyle ?: return null
+        val view = _lyricView ?: return null
+        if (!floatingLyricEnabled || !style.basicStyle.floatingControlEnabled ||
+            !LyricPrefs.gestureEnabled || view.isSleepMode || view.isHideOnLockScreen() ||
+            view.windowVisibility != View.VISIBLE || !view.isShown
+        ) return null
+
+        return view.logoView.takeIf { it.isShown && it.width > 0 && it.height > 0 }
+            ?: view.textView.takeIf { it.isShown && it.width > 0 && it.height > 0 }
     }
+
+    private val controlLocation = IntArray(2)
 
     private fun syncControlWindow() {
         val context = appContext ?: return
         val wm = windowManager ?: return
-        if (!isControlEnabled()) {
+        val anchor = controlAnchor()
+        if (anchor == null) {
             controlHandle?.let { handle ->
                 LyricControlPopup.dismissIfOwnedBy(handle)
+                handle.visibility = View.GONE
                 if (controlAttached) {
                     runCatching { wm.removeViewImmediate(handle) }
+                        .onSuccess { controlAttached = false }
                         .onFailure { YLog.error(TAG, "Remove floating control failed", it) }
-                    controlAttached = false
                 }
             }
             return
         }
         val handle = controlHandle ?: FloatingLyricHandle(
             context,
-            isControlEnabled = ::isControlEnabled,
+            isControlEnabled = { controlAnchor() != null },
             configurationChanged = { syncControlWindow() }
         ).also { controlHandle = it }
-        // 透明触摸层完全跟随悬浮歌词图标的位置与大小
-        val logo = _lyricView?.logoView ?: return
-        val location = IntArray(2)
-        logo.getLocationOnScreen(location)
+        handle.visibility = View.VISIBLE
+        anchor.getLocationOnScreen(controlLocation)
         val screenWidth = context.resources.displayMetrics.widthPixels
         val screenHeight = context.resources.displayMetrics.heightPixels
-        val touchWidth = maxOf(logo.width, 48.dp)
-        val touchHeight = maxOf(logo.height, 48.dp)
+        // Without a logo, keep a small touch target over the middle of the lyrics.
+        val minimumSize = 48.dp
+        val isLogo = anchor === _lyricView?.logoView
+        val touchWidth = if (isLogo) maxOf(anchor.width, minimumSize) else minimumSize
+        val touchHeight = if (isLogo) maxOf(anchor.height, minimumSize) else minimumSize
+        val touchX = (controlLocation[0] + (anchor.width - touchWidth) / 2)
+            .coerceIn(0, (screenWidth - touchWidth).coerceAtLeast(0))
+        val touchY = (controlLocation[1] + (anchor.height - touchHeight) / 2)
+            .coerceIn(0, (screenHeight - touchHeight).coerceAtLeast(0))
+
+        val previous = handle.layoutParams as? WindowManager.LayoutParams
+        if (controlAttached && previous?.x == touchX && previous.y == touchY &&
+            previous.width == touchWidth && previous.height == touchHeight
+        ) return
+
         val params = WindowManager.LayoutParams().apply {
             type = WINDOW_TYPE_APPLICATION_OVERLAY
             format = PixelFormat.TRANSLUCENT
@@ -234,20 +251,12 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
             width = touchWidth
             height = touchHeight
             gravity = Gravity.TOP or Gravity.LEFT
-            x = (location[0] - (touchWidth - logo.width) / 2)
-                .coerceIn(0, (screenWidth - touchWidth).coerceAtLeast(0))
-            y = (location[1] - (touchHeight - logo.height) / 2)
-                .coerceIn(0, (screenHeight - touchHeight).coerceAtLeast(0))
+            x = touchX
+            y = touchY
             title = "Lyricon floating control"
         }
         runCatching {
-            if (controlAttached) {
-                val previous = handle.layoutParams as? WindowManager.LayoutParams
-                if (previous?.x != params.x || previous.y != params.y ||
-                    previous.width != params.width || previous.height != params.height) {
-                    wm.updateViewLayout(handle, params)
-                }
-            }
+            if (controlAttached) wm.updateViewLayout(handle, params)
             else {
                 wm.addView(handle, params)
                 controlAttached = true
@@ -309,32 +318,12 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
         view.setStatusBarColor(statusColor)
     }
 
-    private fun attachWindowIfNeeded() {
-        val wm = windowManager ?: return
-        val view = lyricView ?: return
-        if (windowAttached) return
-
-        val lp = layoutParams ?: buildLayoutParams(currentLyricStyle ?: return).also {
-            layoutParams = it
-        }
-
-        runCatching {
-            if (view.parent is ViewGroup) {
-                (view.parent as ViewGroup).removeView(view)
-            }
-            wm.addView(view, lp)
-            windowAttached = true
-        }.onFailure {
-            YLog.error(TAG, "add floating lyric window failed", it)
-            windowAttached = false
-        }
-    }
-
     private fun buildLayoutParams(style: LyricStyle): WindowManager.LayoutParams {
         return WindowManager.LayoutParams().apply {
             type = WINDOW_TYPE_APPLICATION_OVERLAY
             format = PixelFormat.TRANSLUCENT
             flags = WINDOW_FLAGS
+            title = "Lyricon floating lyrics"
             width = resolveFloatingWindowWidth(style)
             height = WindowManager.LayoutParams.WRAP_CONTENT
             applyLayoutPosition(this, style)
@@ -398,4 +387,41 @@ object FloatingLyricController : ScreenStateMonitor.ScreenStateListener {
      */
     private const val WINDOW_FLAGS = 312
 
+}
+
+internal class FloatingLyricWindow(
+    private val manager: WindowManager,
+    private val lyric: StatusBarLyric,
+    private val params: WindowManager.LayoutParams,
+    private val onLayout: () -> Unit
+) {
+    private val layoutListener = ViewTreeObserver.OnGlobalLayoutListener { onLayout() }
+    private val host = FrameLayout(lyric.context).apply {
+        // Keep window visibility independent of the lyric so a hidden line can make it visible again.
+        addView(lyric, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ))
+    }
+    private var added = false
+
+    fun setEnabled(enabled: Boolean) {
+        // A zero-height window can keep its last visible buffer after playback pauses.
+        val shouldAttach = enabled && lyric.isPlaybackActive
+        host.visibility = if (shouldAttach) View.VISIBLE else View.GONE
+        if (added == shouldAttach) return
+        if (shouldAttach) {
+            manager.addView(host, params)
+            added = true
+            host.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
+        } else {
+            host.viewTreeObserver.removeOnGlobalLayoutListener(layoutListener)
+            manager.removeViewImmediate(host)
+            added = false
+        }
+    }
+
+    fun updateLayout() {
+        if (added) manager.updateViewLayout(host, params)
+    }
 }

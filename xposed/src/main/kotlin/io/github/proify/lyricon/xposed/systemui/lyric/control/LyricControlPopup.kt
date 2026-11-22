@@ -72,6 +72,9 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
 
     private const val SCREEN_MARGIN_DP = 16
     private const val SCREEN_VERTICAL_GAP_DP = 4
+
+    /** 卡片顶边与状态栏底边的间距（对齐系统流体云：状态栏 40dp + 8dp）。 */
+    private const val STATUS_BAR_GAP_DP = 8
     private const val MIN_WIDTH_DP = 280
     private const val ELEVATION_DP = 28
 
@@ -336,7 +339,8 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
         )
         val below = anchorLocation[1] + anchorView.height + SCREEN_VERTICAL_GAP_DP.dp
         val maxY = (dm.heightPixels - panel.measuredHeight - margin).coerceAtLeast(0)
-        val y = (if (below <= maxY) below
+        val statusBarBottom = statusBarHeightPx(context) + STATUS_BAR_GAP_DP.dp
+        val y = (if (below <= maxY) maxOf(below, statusBarBottom)
             else anchorLocation[1] - panel.measuredHeight - SCREEN_VERTICAL_GAP_DP.dp)
             .coerceIn(0, maxY)
         try {
@@ -510,6 +514,13 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
         } else {
             mainHandler.post { action() }
         }
+    }
+
+    /** 状态栏高度（px），取系统 dimen，取不到时按 24dp 估算。 */
+    private fun statusBarHeightPx(context: android.content.Context): Int {
+        val res = context.resources
+        val id = res.getIdentifier("status_bar_height", "dimen", "android")
+        return if (id > 0) res.getDimensionPixelSize(id) else (24 * res.displayMetrics.density).toInt()
     }
 
     /** 弹窗被系统/外部关闭后的资源回收。 */

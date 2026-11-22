@@ -226,6 +226,24 @@ fun LogoPage(
                     )
                 }
 
+                var rotateCover by rememberBooleanPreference(
+                    preferences,
+                    "lyric_style_logo_rotate_cover",
+                    LogoStyle.Defaults.ROTATE_COVER
+                )
+                if (logoStyle == LogoStyle.STYLE_COVER_CIRCLE) {
+                    SwitchPreference(
+                        checked = rotateCover,
+                        startAction = {
+                            IconActions(painterResource(R.drawable.ic_refresh))
+                        },
+                        title = stringResource(R.string.item_logo_rotate_cover),
+                        onCheckedChange = {
+                            rotateCover = it
+                        }
+                    )
+                }
+
                 CheckboxPreference(
                     title = stringResource(R.string.item_logo_style_custom),
                     checked = logoStyle == LogoStyle.STYLE_LOGO_CUSTOM,

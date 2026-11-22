@@ -193,6 +193,12 @@ internal class SongPreprocessor(private val placeholder: TitleSlot) {
     // 标题行填充
     // ---------------------------------------------------------------------
 
+    /**
+     * 在歌词前补一条标题行。
+     *
+     * 不修改传入的 [Song]：返回一个仅替换 `lyrics` 的浅拷贝，
+     * 便于调用方按内容签名安全地跳过重复加工。
+     */
     private fun fillGap(song: Song): Song {
         val title = songTitle(song) ?: return song
         val lyrics = song.lyrics?.toMutableList() ?: mutableListOf()
@@ -207,8 +213,7 @@ internal class SongPreprocessor(private val placeholder: TitleSlot) {
                 lyrics.add(0, titleLine(end, end, title))
             }
         }
-        song.lyrics = lyrics
-        return song
+        return song.copy(lyrics = lyrics)
     }
 
     private fun titleLine(end: Long, duration: Long, text: String) =

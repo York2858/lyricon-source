@@ -83,7 +83,7 @@
     <string name="item_text_enable_rainbow_color_secondary">Apply rainbow to secondary line</string>
     <string name="item_text_enable_rainbow_color_secondary_summary">When enabled, secondary line follows rainbow gradient; when disabled, it uses custom background color.</string>
     <string name="item_floating_control">Floating lyric control dot</string>
-    <string name="item_floating_control_summary">Lyrics let touches pass through. The floating lyric icon handles tap, hold and swipe gestures from the basic gesture settings.</string>
+    <string name="item_floating_control_summary">Tap, hold, or swipe on the floating lyric icon. When the icon is hidden, use the center of the lyrics. Gesture actions follow the basic settings.</string>
     <string name="item_text_enable_custom_color">Custom color</string>
     <string name="item_text_color_light_mode">Color (light mode)</string>
     <string name="item_text_color_dark_mode">Color (dark mode)</string>
@@ -131,6 +131,7 @@
     <string name="item_logo_style_app_logo">App icon</string>
     <string name="item_logo_style_cover_square">Album art (square)</string>
     <string name="item_logo_style_cover_circle">Album art (circle)</string>
+    <string name="item_logo_rotate_cover">Rotate album art</string>
     <string name="item_logo_section_color">Color</string>
     <string name="item_logo_custom_color">Custom color</string>
     <string name="item_logo_color_light">Color (light mode)</string>
@@ -312,4 +313,11 @@
     <string name="item_music_tags_default_app_summary">Use this app to open the current local audio from the left control panel button</string>
     <string name="option_music_tags_ask">Ask every time</string>
     <string name="option_music_tags_unavailable">Selected app unavailable — choose again</string>
+    <string name="immersive_favorite">Favorite</string>
+    <string name="immersive_remove_favorite">Remove from favorites</string>
+    <string name="immersive_comments">Comments</string>
+    <string name="immersive_review">Review</string>
+    <string name="immersive_retranslate_short">Retranslate</string>
+    <string name="immersive_retranslate_description">Retranslate current lyrics</string>
+    <string name="immersive_retranslating">Translating</string>
 </resources>

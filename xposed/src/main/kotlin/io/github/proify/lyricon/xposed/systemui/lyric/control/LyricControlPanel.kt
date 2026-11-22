@@ -138,7 +138,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
 
         content = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(CARD_PADDING_DP.dp)
+            setPadding(CARD_PADDING_DP.dp, CARD_PADDING_DP.dp, CARD_PADDING_DP.dp, 19.dp)
         }
         val moduleContext = context.createPackageContext(BuildConfig.APP_PACKAGE_NAME, Context.CONTEXT_IGNORE_SECURITY)
         val backdropContext = object : android.view.ContextThemeWrapper(moduleContext, android.R.style.Theme_Material_NoActionBar) {
@@ -179,7 +179,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
             setOnClickListener { actionListener?.onTitle(it) }
             textSize = TITLE_TEXT_SIZE_SP.sp
             textColor = TEXT_COLOR_PRIMARY
-            textTypeface = Typeface.create(Typeface.DEFAULT,500,false)
+            textTypeface = Typeface.create(Typeface.DEFAULT, 700, false)
             // 单行、滚动与渐隐参数均由 MarqueeTitleView 内部管理
         }
 
@@ -187,6 +187,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
             contentDescription = "歌手"
             textSize = ARTIST_TEXT_SIZE_SP
             setTextColor(TEXT_COLOR_SECONDARY)
+            typeface = Typeface.create(Typeface.DEFAULT, 600, false)
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         }
@@ -195,8 +196,9 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
             contentDescription = "播放进度"
             // 长圆形（胶囊）轨道：非 Material 细线，两端为半圆
             progressDrawable = longRoundedTrack()
-            // 去掉拖动圆球（thumb），纯进度条；仍可点击/拖动轨道进行 seek
-            thumb = null
+            // 系统流体云同款小圆点
+            thumb = seekThumb()
+            thumbOffset = 0
             // 取消素材主题自带的按压圆形 ripple
             background = null
             max = SEEK_MAX
@@ -228,10 +230,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         currentTimeView = TextView(context).apply {
             textSize = TIME_TEXT_SIZE_SP
             setTextColor(TEXT_COLOR_SECONDARY)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { weight = 1f }
+            isSingleLine = true
         }
 
         totalTimeView = TextView(context).apply {
@@ -240,6 +239,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         }
 
         previousButton = ImageView(context).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
             setImageDrawable(
                 moduleRes.getDrawable(
                     drawableId("sui_control_skip_previous_fill1_24px"),
@@ -252,11 +252,18 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
 
         playButton = ImageView(context).apply {
             setImageDrawable(playPauseIcon(playing = false))
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setPadding(1.dp)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.argb(51, 255, 255, 255))
+            }
             setOnTouchListener(ControlUi.pressFeedbackListener())
             setOnClickListener { actionListener?.onTogglePlay() }
         }
 
         nextButton = ImageView(context).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
             setImageDrawable(
                 moduleRes.getDrawable(
                     drawableId("sui_control_skip_next_fill1_24px"),
@@ -555,6 +562,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
     fun setCover(bitmap: Bitmap?) {
         if (bitmap == null) coverView.setImageDrawable(null) else coverView.setImageBitmap(bitmap)
         coverBitmap = bitmap
+        seekBar.progressDrawable = longRoundedTrack(accentColor(bitmap))
         updateBackdrop()
     }
 
@@ -571,7 +579,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
      * 长圆（胶囊）轨道 Drawable：底轨 + 已填充进度两层，两端为半圆。
      * 每层以固定高度、垂直居中放置，避免 Material 细线样式。
      */
-    private fun longRoundedTrack(): Drawable {
+    private fun longRoundedTrack(fillColor: Int = TEXT_COLOR_PRIMARY): Drawable {
         val h = LONG_ROUNDED_TRACK_HEIGHT_DP.dp
         val radius = h / 2f
         val track = GradientDrawable().apply {
@@ -583,7 +591,7 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         val fill = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = radius
-            setColor(TEXT_COLOR_PRIMARY)
+            setColor(fillColor)
             setSize(0, h)
         }
         val clip = ClipDrawable(fill, Gravity.START, ClipDrawable.HORIZONTAL)
@@ -615,14 +623,6 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         titleColumn.addView(titleView)
         titleColumn.addView(artistView)
 
-        val timeRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, TIME_ROW_TOP_PADDING_DP.dp, 0, 0)
-        }
-        timeRow.addView(currentTimeView)
-        timeRow.addView(totalTimeView)
-
         val infoRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -631,9 +631,20 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         infoRow.addView(coverView)
         infoRow.addView(titleColumn)
         content.addView(infoRow)
-        content.addView(seekBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = SEEK_BAR_TOP_MARGIN_DP.dp })
-        content.addView(timeRow)
+
+        val seekRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, SEEK_ROW_TOP_PADDING_DP.dp, 0, 0)
+        }
+        seekRow.addView(currentTimeView)
+        seekRow.addView(seekBar, LinearLayout.LayoutParams(0, 16.dp).apply {
+            weight = 1f
+            marginStart = 8.dp
+            marginEnd = 8.dp
+        })
+        seekRow.addView(totalTimeView)
+        content.addView(seekRow)
     }
 
     /**
@@ -641,16 +652,24 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
      * 右下圆形 AI 图标独立最右，与参考图布局一致。
      */
     private fun buildActionRow() {
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
+        // 中心点位置对齐系统流体云：喜爱 / 上一首 / 播放 / 下一首 / 歌词
+        val row = FractionControlRow(context).apply {
             setPadding(0, ACTION_ROW_TOP_PADDING_DP.dp, 0, 0)
+            cardSidePadding = CARD_PADDING_DP.dp
         }
-        addActionSlot(row, favoriteButton, 25.dp)
-        addActionSlot(row, previousButton)
-        addActionSlot(row, playButton)
-        addActionSlot(row, nextButton)
-        addActionSlot(row, lyricsButton, 26.dp)
+        row.addView(favoriteButton, FractionControlRow.LayoutParams(ACTION_BUTTON_SIZE_DP.dp))
+        row.addView(previousButton, FractionControlRow.LayoutParams(34.dp))
+        row.addView(playButton, FractionControlRow.LayoutParams(PLAY_BUTTON_SIZE_DP.dp))
+        row.addView(nextButton, FractionControlRow.LayoutParams(34.dp))
+        row.addView(lyricsButton, FractionControlRow.LayoutParams(ACTION_BUTTON_SIZE_DP.dp))
+
+        // 喜爱按钮右边缘对齐左侧时间文本的右边缘
+        currentTimeView.addOnLayoutChangeListener { _, _, _, right, _, _, _, _, _ ->
+            if (row.heartRightAnchor != right) {
+                row.heartRightAnchor = right
+                row.requestLayout()
+            }
+        }
 
         content.addView(
             row,
@@ -658,32 +677,6 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
-        )
-    }
-
-    /** 把动作按钮包进等宽的居中槽位（按钮固定 40dp）。 */
-    private fun addActionSlot(
-        row: LinearLayout,
-        button: View,
-        size: Int = ACTION_BUTTON_SIZE_DP.dp
-    ) {
-        val slot = FrameLayout(context).apply {
-            addView(
-                button,
-                LayoutParams(
-                    size, size, Gravity.CENTER
-                )
-            )
-        }
-        row.addView(
-            slot,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = Gravity.CENTER
-                weight = 1f
-            }
         )
     }
 
@@ -695,6 +688,42 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         val iconId = if (playing) drawableId("sui_control_pause_fill1_24px")
         else drawableId("sui_control_play_arrow_fill1_24px")
         return moduleRes.getDrawable(iconId, context.theme)
+    }
+
+    /** 进度条圆点：系统流体云同款白色小圆。 */
+    private fun seekThumb(): Drawable = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(Color.WHITE)
+        setSize(SEEK_THUMB_SIZE_DP.dp, SEEK_THUMB_SIZE_DP.dp)
+    }
+
+    /** 取封面里最鲜艳的颜色做进度色，取不到时回退白色。 */
+    private fun accentColor(bitmap: Bitmap?): Int {
+        if (bitmap == null) return Color.WHITE
+        var best = Color.WHITE
+        var bestScore = 0f
+        val step = (minOf(bitmap.width, bitmap.height) / 24).coerceAtLeast(1)
+        val hsv = FloatArray(3)
+        var y = 0
+        while (y < bitmap.height) {
+            var x = 0
+            while (x < bitmap.width) {
+                val color = bitmap.getPixel(x, y)
+                Color.colorToHSV(color, hsv)
+                val score = hsv[1] * hsv[2]
+                if (score > bestScore) {
+                    bestScore = score
+                    best = color
+                }
+                x += step
+            }
+            y += step
+        }
+        if (bestScore <= 0.05f) return Color.WHITE
+        Color.colorToHSV(best, hsv)
+        hsv[1] = hsv[1].coerceIn(.35f, .85f)
+        hsv[2] = hsv[2].coerceIn(.75f, 1f)
+        return Color.HSVToColor(hsv)
     }
 
     private fun positionToProgress(position: Long): Int {
@@ -716,21 +745,23 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
     // -------------------------------------------------------------------------
 
     private companion object {
-        const val CARD_RADIUS_DP = 28
-        const val COVER_RADIUS_DP = 16
-        const val COVER_SIZE_DP = 56
+        const val CARD_RADIUS_DP = 26
+        const val COVER_RADIUS_DP = 10
+        const val COVER_SIZE_DP = 44
         const val CARD_PADDING_DP = 16
 
-        const val INFO_ROW_BOTTOM_PADDING_DP = 10
-        const val TITLE_COLUMN_LEFT_PADDING_DP = 10
-        const val SEEK_BAR_TOP_MARGIN_DP = 5
-        const val TIME_ROW_TOP_PADDING_DP = 5
-        const val ACTION_ROW_TOP_PADDING_DP = 0
-        const val ACTION_BUTTON_SIZE_DP = 36
+        const val INFO_ROW_BOTTOM_PADDING_DP = 7
+        const val TITLE_COLUMN_LEFT_PADDING_DP = 8
+        const val SEEK_ROW_TOP_PADDING_DP = 0
+        const val ACTION_ROW_TOP_PADDING_DP = 10
+        const val ACTION_BUTTON_SIZE_DP = 24
+        const val PLAY_BUTTON_SIZE_DP = 44
+        const val PLAY_ICON_SIZE_DP = 16
         const val SEEK_MAX = 1000
 
         /** 长圆（胶囊）进度轨道高度（dp）。 */
-        const val LONG_ROUNDED_TRACK_HEIGHT_DP = 5
+        const val LONG_ROUNDED_TRACK_HEIGHT_DP = 4
+        const val SEEK_THUMB_SIZE_DP = 7
 
         /** 无 seek 锁定目标。 */
         const val NO_SEEK_TARGET = Long.MIN_VALUE
@@ -741,16 +772,16 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         /** 判定"已到达 seek 目标"的容差（毫秒，覆盖 1s 位置上报粒度）。 */
         const val SEEK_TARGET_TOLERANCE_MS = 2000L
 
-        const val TITLE_TEXT_SIZE_SP = 17f
-        const val ARTIST_TEXT_SIZE_SP = 14f
-        const val TIME_TEXT_SIZE_SP = 11f
+        const val TITLE_TEXT_SIZE_SP = 16f
+        const val ARTIST_TEXT_SIZE_SP = 15f
+        const val TIME_TEXT_SIZE_SP = 13f
 
         const val TITLE_WHEN_NO_SONG = "未在播放"
         val CARD_COLOR = Color.argb(244, 28, 32, 46)
         val COVER_PLACEHOLDER_COLOR = Color.argb(70, 255, 255, 255)
         const val TEXT_COLOR_PRIMARY = Color.WHITE
-        val TEXT_COLOR_SECONDARY = Color.argb(170, 255, 255, 255)
-        val SEEK_TRACK_COLOR = Color.argb(60, 255, 255, 255)
+        val TEXT_COLOR_SECONDARY = Color.argb(158, 255, 255, 255)
+        val SEEK_TRACK_COLOR = Color.argb(51, 255, 255, 255)
 
         // ---- 卡片触摸效果 ----
         const val TOUCH_PRESS_SCALE = 0.97f
@@ -764,5 +795,57 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
         const val TOUCH_MODE_UNDECIDED = 0
         const val TOUCH_MODE_HORIZONTAL = 1
         const val TOUCH_MODE_VERTICAL = 2
+    }
+}
+
+/**
+ * 控制行：五个按钮按固定比例的中心点排布，数值取自系统流体云
+ * （卡片宽 328dp 时中心点约 26 / 101 / 164 / 227 / 290dp）。
+ */
+private class FractionControlRow(context: Context) : ViewGroup(context) {
+    private val fractions = floatArrayOf(.079f, .308f, .5f, .692f, .886f)
+
+    /** 卡片左右内边距（px）：本行在 content 内部，宽度比卡片少两侧内边距。 */
+    var cardSidePadding: Int = 0
+
+    /** 喜爱按钮右边缘锚点（px，行内坐标）；-1 时回退到比例位置。 */
+    var heartRightAnchor: Int = -1
+
+    class LayoutParams(size: Int) : ViewGroup.LayoutParams(size, size)
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val width = MeasureSpec.getSize(widthMeasureSpec)
+        var maxHeight = 0
+        for (index in 0 until childCount) {
+            val child = getChildAt(index)
+            val lp = child.layoutParams
+            child.measure(
+                MeasureSpec.makeMeasureSpec(lp.width, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(lp.height, MeasureSpec.EXACTLY)
+            )
+            maxHeight = maxOf(maxHeight, child.measuredHeight)
+        }
+        setMeasuredDimension(width, resolveSize(maxHeight + paddingTop + paddingBottom, heightMeasureSpec))
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        val cardWidth = width - paddingLeft - paddingRight + cardSidePadding * 2
+        val contentHeight = height - paddingTop - paddingBottom
+        for (index in 0 until childCount) {
+            val child = getChildAt(index)
+            val fraction = fractions[index.coerceAtMost(fractions.lastIndex)]
+            val centerX = if (index == 0 && heartRightAnchor >= 0) {
+                heartRightAnchor - child.measuredWidth / 2
+            } else {
+                paddingLeft + (cardWidth * fraction).toInt() - cardSidePadding
+            }
+            val centerY = paddingTop + contentHeight / 2
+            child.layout(
+                centerX - child.measuredWidth / 2,
+                centerY - child.measuredHeight / 2,
+                centerX + child.measuredWidth / 2,
+                centerY + child.measuredHeight / 2
+            )
+        }
     }
 }

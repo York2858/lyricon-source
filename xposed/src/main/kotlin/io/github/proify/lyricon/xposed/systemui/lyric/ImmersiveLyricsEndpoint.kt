@@ -148,7 +148,8 @@ object ImmersiveLyricsEndpoint {
                 val failure = runCatching {
                     check(request.getString("identity") == identity) { "曲目已变化，请重新点击歌名" }
                     if (request.containsKey("token")) MusicTagLauncher.launchPrepared(context,
-                        request.getString("token").orEmpty(), request.getString("choice_id").orEmpty())
+                        request.getString("token").orEmpty(), request.getString("choice_id").orEmpty(),
+                        request.getString("target"))
                     else MusicTagLauncher.launch(context)
                 }.exceptionOrNull()
                 response.putBoolean("accepted", failure == null)

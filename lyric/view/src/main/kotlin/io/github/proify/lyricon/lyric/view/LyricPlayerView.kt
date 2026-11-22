@@ -43,6 +43,10 @@ open class LyricPlayerView(
     private var refreshingSong = false
     private var style = LyricViewStyle()
 
+    /** 上次加工内容的签名与占位符设置，用于跳过未变化的重复重建。 */
+    private var lastPreparedSignature: Int? = null
+    private var lastPreparedPlaceholder: TitleSlot? = null
+
     private var lineList: List<TimedLine>? = null
     private var timingNavigator: TimingNavigator<TimedLine> = emptyNavigator()
     private var interludeTracker = InterludeTracker(MIN_GAP_DURATION)
@@ -56,6 +60,14 @@ open class LyricPlayerView(
         set(value) {
             field = value
             forEach { child -> applyAnimationState(child) }
+        }
+
+    /** 播放器暂停时冻结所有歌词行的逐帧特效。 */
+    var playbackPaused: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            forEach { (it as? RichLyricLineView)?.setPlaybackPaused(value) }
         }
 
     private fun applyAnimationState(child: View) {
@@ -82,8 +94,9 @@ open class LyricPlayerView(
     override fun onViewAdded(child: View?) {
         super.onViewAdded(child)
         child?.let { applyAnimationState(it) }
-        if (forceCenterContent && child is RichLyricLineView) {
-            child.setCenterAligned(true)
+        if (child is RichLyricLineView) {
+            child.setPlaybackPaused(playbackPaused)
+            if (forceCenterContent) child.setCenterAligned(true)
         }
     }
     private val defaultLp = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
@@ -178,14 +191,25 @@ open class LyricPlayerView(
                 } else if (!exiting) reset()
                 refreshingSong = sameTrack
 
-                val processor = SongPreprocessor(style.placeholder)
-                val lines = processor.prepare(value)
-                lineList = lines
-                timingNavigator = TimingNavigator(lines.toTypedArray())
+                // 同曲目下内容未变化（如播放状态恢复重复下发）时复用已构建的时间轴。
+                val signature = value.hashCode()
+                val placeholder = style.placeholder
+                if (!sameTrack || signature != lastPreparedSignature ||
+                    placeholder != lastPreparedPlaceholder
+                ) {
+                    val processor = SongPreprocessor(placeholder)
+                    val lines = processor.prepare(value)
+                    lineList = lines
+                    timingNavigator = TimingNavigator(lines.toTypedArray())
+                    lastPreparedSignature = signature
+                    lastPreparedPlaceholder = placeholder
+                }
             } else {
                 reset()
                 lineList = null
                 timingNavigator = emptyNavigator()
+                lastPreparedSignature = null
+                lastPreparedPlaceholder = null
             }
             field = value
         }
@@ -264,6 +288,16 @@ open class LyricPlayerView(
     fun seekTo(position: Long) = updatePosition(position, true)
 
     fun setPosition(position: Long) = updatePosition(position)
+
+    fun hasTimedLineChange(position: Long): Boolean {
+        if (isTextMode) return false
+
+        var hasNewLine = false
+        val count = timingNavigator.forEachAtOrPrevious(position) {
+            if (it.line !in activeLines) hasNewLine = true
+        }
+        return hasNewLine || count != activeLines.size
+    }
 
     fun reset() {
         YoYoAnimation.cancelAnimation(this)
@@ -426,6 +460,7 @@ open class LyricPlayerView(
         setMainLyricPlayListener(mainPlayListener)
         setSecondaryLyricPlayListener(secondaryPlayListener)
         setTransitionConfig(_transitionConfig)
+        setPlaybackPaused(playbackPaused)
     }
 
     private fun autoAddView(view: RichLyricLineView) {

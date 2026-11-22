@@ -1478,8 +1478,9 @@ internal fun List<LyricWord>.toAppleMusicRenderWords(
         val suffix = if (useDisplayText) {
             val gap = visibleLine.substring(start + word.text.length, starts.getOrNull(index + 1) ?: visibleLine.length)
             // Separators belong to the timed source, even when the display line also
-            // supplies untimed punctuation elsewhere.
-            if (gap.all(Char::isWhitespace)) sourceSeparator else gap
+            // supplies untimed punctuation elsewhere. Providers that keep the space only
+            // in the line text still need it between words, so fall back to that gap.
+            if (gap.all(Char::isWhitespace)) sourceSeparator.ifEmpty { gap } else gap
         } else {
             sourceSeparator
         }

@@ -22,11 +22,18 @@ internal fun List<RichLyricLine>.toHalcyonLyrics(): List<LyricLine> = mapIndexed
     fun display(text: String?, values: List<io.github.proify.lyricon.lyric.model.LyricWord>?): String {
         val authored = values.orEmpty().joinToString("") { it.text.orEmpty() }.trimEnd()
         val supplied = text?.trimEnd()?.takeIf(String::isNotBlank) ?: return authored
-        // Some providers insert spaces between Latin timing spans when building the
-        // line text. If only whitespace differs, the timed spans retain the real spelling.
-        return if (authored == supplied ||
-            authored.isNotBlank() && authored.filterNot(Char::isWhitespace) == supplied.filterNot(Char::isWhitespace)
-        ) authored else supplied
+        // Some providers insert spaces between Latin timing spans when building the line text,
+        // while others trim each timed span and leave the text as the only source of
+        // separators. When the two differ only in whitespace, keep whichever keeps more of
+        // them ("Once, I was" beats "Once,Iwas").
+        val sameIgnoringWhitespace = authored.isNotBlank() &&
+            authored.filterNot(Char::isWhitespace) == supplied.filterNot(Char::isWhitespace)
+        return when {
+            authored == supplied -> authored
+            !sameIgnoringWhitespace -> supplied
+            authored.count(Char::isWhitespace) >= supplied.count(Char::isWhitespace) -> authored
+            else -> supplied
+        }
     }
     val secondaryIsReading = !source.roma.isNullOrBlank() && source.secondary?.trim() == source.roma?.trim()
     LyricLine(

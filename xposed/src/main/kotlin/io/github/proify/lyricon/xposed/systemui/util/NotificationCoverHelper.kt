@@ -199,6 +199,10 @@ object NotificationCoverHelper {
         @Volatile
         private var lastCoverId: Int = -1
 
+        /** 上次写入封面的内容指纹；相同画面换成新 Bitmap 对象时也能跳过写盘。 */
+        @Volatile
+        private var lastFingerprint: Long = 0L
+
         /** 保护保存操作的互斥锁 */
         private val writeMutex = Mutex()
 
@@ -223,10 +227,39 @@ object NotificationCoverHelper {
             // 必须在主线程立即克隆并缩放，因为 originalCover 可能随时被系统回收
             val scaledCover = cloneAndScaleCover(originalCover) ?: return
 
+            // 相同画面可能以新的 Bitmap 对象到达（generationId 不同），
+            // 用轻量像素指纹跳过重复写盘与缓存复制。
+            val fingerprint = contentFingerprint(scaledCover)
+            if (fingerprint != 0L && fingerprint == lastFingerprint) {
+                scaledCover.safeRecycle()
+                lastCoverId = coverId
+                return
+            }
+
             // 将文件写入操作分发到协程中异步执行
             scope.launch {
-                saveCoverAndNotify(scaledCover, coverId, title, artist)
+                saveCoverAndNotify(scaledCover, coverId, fingerprint, title, artist)
             }
+        }
+
+        /** 对缩放后的软件位图做稀疏采样指纹，开销远小于完整像素哈希。 */
+        private fun contentFingerprint(bitmap: Bitmap): Long = try {
+            var hash = 1125899906842597L
+            val stepX = (bitmap.width / 8).coerceAtLeast(1)
+            val stepY = (bitmap.height / 8).coerceAtLeast(1)
+            var y = 0
+            while (y < bitmap.height) {
+                var x = 0
+                while (x < bitmap.width) {
+                    hash = hash * 31 + bitmap.getPixel(x, y)
+                    x += stepX
+                }
+                y += stepY
+            }
+            hash
+        } catch (e: Exception) {
+            // 硬件位图等无法读取像素时退回仅按 generationId 去重。
+            0L
         }
 
         /**
@@ -264,6 +297,7 @@ object NotificationCoverHelper {
         private suspend fun saveCoverAndNotify(
             cover: Bitmap,
             coverId: Int,
+            fingerprint: Long,
             title: String?,
             artist: String?
         ) {
@@ -282,6 +316,7 @@ object NotificationCoverHelper {
 
                     if (savedSuccessfully) {
                         lastCoverId = coverId
+                        if (fingerprint != 0L) lastFingerprint = fingerprint
                         getLatestCoverFile(packageName)?.let { file ->
                             notifyListeners(packageName, file)
                         }

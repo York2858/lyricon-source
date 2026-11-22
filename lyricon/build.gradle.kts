@@ -42,7 +42,10 @@ configure<ApplicationExtension> {
     signingConfigs {
         // 正式包使用 debug 签名（本机自用分发）
         create("release") {
-            storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
+            val androidUserHome = providers.environmentVariable("ANDROID_USER_HOME")
+                .orElse("${System.getProperty("user.home")}/.android")
+                .get()
+            storeFile = file("$androidUserHome/debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"

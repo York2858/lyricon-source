@@ -2,9 +2,11 @@ package io.github.proify.lyricon.xposed.systemui.lyric
 
 import android.app.Notification
 import android.content.Context
+import android.graphics.drawable.Icon
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import io.github.proify.lyricon.common.util.CoverImages
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import io.github.proify.lyricon.xposed.systemui.util.MediaTrackMeta
@@ -14,7 +16,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.File
 import java.lang.ref.WeakReference
+import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -25,7 +29,7 @@ internal object ImmersiveNotificationCover {
 
     private val initialized = AtomicBoolean()
     private val covers = ConcurrentHashMap<String, Cover>()
-    private val versions = ConcurrentHashMap<String, Long>()
+    private val workers = ConcurrentHashMap<String, CoverWorker>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     @Volatile private var activeListener: WeakReference<NotificationListenerService>? = null
     @Volatile private var applicationContext: Context? = null
@@ -157,38 +161,103 @@ internal object ImmersiveNotificationCover {
 
     private fun save(context: Context, item: StatusBarNotification) {
         val title = item.notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
-        val icon = NotificationArtwork.icon(item.notification)
-        Log.i("ImmersiveCover", "media package=${item.packageName} titleHash=${title.hashCode()} icon=${icon != null}")
-        if (icon == null) return
-        val version = versions.merge(item.packageName, 1L, Long::plus) ?: return
-        scope.launch {
-            runCatching {
-                val bytes = NotificationArtwork.encode(context, icon) ?: return@runCatching
-                val hash = MessageDigest.getInstance("SHA-256")
-                    .digest(bytes)
-                    .joinToString("") { "%02x".format(it) }
-                if (versions[item.packageName] == version) {
-                    covers[item.packageName] = Cover(
-                        item.key,
-                        title,
-                        "notification:${item.packageName}:$hash",
-                        bytes
-                    )
-                    Log.i("ImmersiveCover", "cached package=${item.packageName} bytes=${bytes.size}")
-                    val meta = MediaTrackMeta.resolve(item.packageName)
-                    if (meta?.title?.trim().equals(title.trim(), ignoreCase = true)) {
-                        NotificationCoverHelper.getCachedCoverFile(item.packageName, meta?.title.orEmpty(), meta?.artist.orEmpty())?.let { file ->
-                            file.parentFile?.mkdirs()
-                            val temporary = java.io.File.createTempFile("immersive-cover-", ".tmp", file.parentFile)
-                            try {
-                                temporary.writeBytes(bytes)
-                                java.nio.file.Files.move(temporary.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-                            } finally { temporary.delete() }
-                        }
-                    }
+        val icon = NotificationArtwork.icon(item.notification) ?: return
+        workers.computeIfAbsent(item.packageName, ::CoverWorker)
+            .enqueue(context, CoverRequest(item.key, title, icon))
+    }
+
+    private data class CoverRequest(val notificationKey: String, val title: String, val icon: Icon)
+
+    private data class PersistedCover(val key: String, val fileSignature: String)
+
+    private class CoverWorker(private val packageName: String) {
+        private var active: CoverRequest? = null
+        private var pending: CoverRequest? = null
+        private var lastCover: Cover? = null
+        private var lastIcon: WeakReference<Icon>? = null
+        private var lastPixels: ByteArray? = null
+        private var persisted: PersistedCover? = null
+
+        @Synchronized
+        fun enqueue(context: Context, request: CoverRequest) {
+            if ((pending ?: active) == request) return
+            if (active == null) {
+                active = request
+                scope.launch { drain(context, request) }
+            } else {
+                pending = request
+            }
+        }
+
+        @Synchronized
+        private fun nextRequest(): CoverRequest? {
+            active = pending
+            pending = null
+            return active
+        }
+
+        private fun drain(context: Context, first: CoverRequest) {
+            var request: CoverRequest? = first
+            while (request != null) {
+                val current = request
+                runCatching { process(context, current) }.onFailure {
+                    Log.w("ImmersiveCover", "Cannot process media notification artwork for $packageName", it)
                 }
-            }.onFailure {
-                Log.w("ImmersiveCover", "Cannot decode media notification artwork for ${item.packageName}", it)
+                request = nextRequest()
+            }
+        }
+
+        private fun process(context: Context, request: CoverRequest) {
+            val previous = lastCover
+            val cover = if (previous != null && lastIcon?.get() === request.icon) {
+                previous.copy(notificationKey = request.notificationKey, title = request.title)
+            } else {
+                val bitmap = NotificationArtwork.render(context, request.icon) ?: return
+                try {
+                    val pixels = ByteBuffer.allocate(Int.SIZE_BYTES * 2 + bitmap.byteCount)
+                    pixels.putInt(bitmap.width)
+                    pixels.putInt(bitmap.height)
+                    bitmap.copyPixelsToBuffer(pixels)
+                    val fingerprint = MessageDigest.getInstance("SHA-256").digest(pixels.array())
+                    val result = if (previous != null && lastPixels?.contentEquals(fingerprint) == true) {
+                        previous.copy(notificationKey = request.notificationKey, title = request.title)
+                    } else {
+                        val bytes = NotificationArtwork.encode(bitmap)
+                        val hash = MessageDigest.getInstance("SHA-256").digest(bytes)
+                            .joinToString("") { "%02x".format(it) }
+                        Log.i("ImmersiveCover", "cached package=$packageName bytes=${bytes.size}")
+                        Cover(request.notificationKey, request.title, "notification:$packageName:$hash", bytes)
+                    }
+                    lastPixels = fingerprint
+                    result
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+            lastIcon = WeakReference(request.icon)
+            lastCover = cover
+            synchronized(this) {
+                if (pending != null) return
+                covers[packageName] = cover
+            }
+
+            val meta = MediaTrackMeta.resolve(packageName) ?: return
+            val title = meta.title ?: return
+            if (!title.trim().equals(request.title.trim(), ignoreCase = true)) return
+            val file = NotificationCoverHelper.getCachedCoverFile(packageName, title, meta.artist.orEmpty()) ?: return
+            persist(file, cover)
+        }
+
+        private fun persist(file: File, cover: Cover) {
+            if (persisted == PersistedCover(cover.key, CoverImages.key(file))) return
+            file.parentFile?.mkdirs()
+            val temporary = File.createTempFile("immersive-cover-", ".tmp", file.parentFile)
+            try {
+                temporary.writeBytes(cover.bytes)
+                java.nio.file.Files.move(temporary.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                persisted = PersistedCover(cover.key, CoverImages.key(file))
+            } finally {
+                temporary.delete()
             }
         }
     }

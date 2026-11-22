@@ -19,6 +19,7 @@ class EmptyLyriconSubscriber(
     override fun removeConnectionListener(listener: ConnectionListener) {}
     override fun subscribeActivePlayer(listener: ActivePlayerListener) = false
     override fun unsubscribeActivePlayer(listener: ActivePlayerListener) = false
+    override fun notifyPositionDemandChanged() {}
     override fun register() {}
     override fun unregister() {}
     override fun destroy() {}

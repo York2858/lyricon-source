@@ -16,6 +16,7 @@ import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import io.github.proify.lyricon.xposed.systemui.util.SystemUIMediaUtils.updateCallbackRegistrations
 import java.util.concurrent.ConcurrentHashMap
@@ -53,6 +54,46 @@ object SystemUIMediaUtils {
     /** 确保回调在主线程分发的 Handler 实例 */
     private val mainHandler: Handler = Handler(Looper.getMainLooper())
 
+    /** 空闲会话扫描间隔。 */
+    private const val IDLE_SWEEP_INTERVAL_MS = 30_000L
+
+    /** 无标题且非播放状态的会话持续多久后释放回调。 */
+    private const val IDLE_RELEASE_AFTER_MS = 60_000L
+
+    private var sweepScheduled = false
+
+    /** 周期释放空闲会话，并在其重新具备媒体信息时恢复监听。 */
+    private val idleSweep = object : Runnable {
+        override fun run() {
+            sweepIdleSessions()
+            mainHandler.postDelayed(this, IDLE_SWEEP_INTERVAL_MS)
+        }
+    }
+
+    private fun scheduleIdleSweep() {
+        if (sweepScheduled) return
+        sweepScheduled = true
+        mainHandler.postDelayed(idleSweep, IDLE_SWEEP_INTERVAL_MS)
+    }
+
+    private fun sweepIdleSessions() {
+        val now = SystemClock.elapsedRealtime()
+        activeSessions.forEach { (_, wrapper) ->
+            if (wrapper.hasMediaIdentity()) {
+                wrapper.idleSince = 0L
+                if (!wrapper.isRegistered) {
+                    wrapper.register()
+                    dispatchInitialState(wrapper.controller)
+                }
+            } else {
+                if (wrapper.idleSince == 0L) wrapper.idleSince = now
+                if (wrapper.isRegistered && now - wrapper.idleSince >= IDLE_RELEASE_AFTER_MS) {
+                    wrapper.release()
+                }
+            }
+        }
+    }
+
     /**
      * 会话状态变更监听器
      * 当系统内有新的媒体会话启动或现有会话关闭时，触发 [updateCallbackRegistrations]。
@@ -80,6 +121,7 @@ object SystemUIMediaUtils {
                 it.addOnActiveSessionsChangedListener(sessionListener, null)
                 // 执行初次全量会话同步
                 updateCallbackRegistrations(it.getActiveSessions(null))
+                scheduleIdleSweep()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize SystemUIMediaHooker", e)
@@ -143,6 +185,28 @@ object SystemUIMediaUtils {
         /** 所属应用包名 */
         val packageName: String = controller.packageName ?: "unknown"
 
+        /** 是否已注册系统回调。 */
+        @Volatile
+        var isRegistered: Boolean = false
+            private set
+
+        /** 首次检测为空闲会话的时间；0 表示当前不空闲。 */
+        @Volatile
+        var idleSince: Long = 0L
+
+        /** 会话是否具备可用的媒体信息（标题或播放状态）。 */
+        fun hasMediaIdentity(): Boolean {
+            val metadata = runCatching { controller.metadata }.getOrNull()
+            val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
+                ?: metadata?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
+            if (!title.isNullOrBlank()) return true
+
+            val state = runCatching { controller.playbackState?.state }.getOrNull() ?: return false
+            return state != PlaybackState.STATE_NONE &&
+                    state != PlaybackState.STATE_STOPPED &&
+                    state != PlaybackState.STATE_ERROR
+        }
+
         /**
          * 媒体状态变化回调实现
          * 拦截并转发元数据、播放状态及销毁事件至全局监听器。
@@ -177,8 +241,10 @@ object SystemUIMediaUtils {
          * 向系统注册回调
          */
         fun register() {
+            if (isRegistered) return
             try {
                 controller.registerCallback(callback, mainHandler)
+                isRegistered = true
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to register callback for $packageName", e)
             }
@@ -188,10 +254,13 @@ object SystemUIMediaUtils {
          * 解绑回调，释放资源
          */
         fun release() {
+            if (!isRegistered) return
             try {
                 controller.unregisterCallback(callback)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to unregister callback for $packageName", e)
+            } finally {
+                isRegistered = false
             }
         }
     }

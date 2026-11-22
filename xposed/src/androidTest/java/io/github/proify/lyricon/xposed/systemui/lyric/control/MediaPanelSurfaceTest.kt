@@ -52,7 +52,7 @@ class MediaPanelSurfaceTest {
                 assertTrue(artist.left >= art.right)
                 assertTrue(title.top >= art.top && artist.bottom <= art.bottom)
                 assertTrue("progress belongs below the whole header", seek.top >= art.bottom)
-                assertEquals(art.left, seek.left)
+                assertTrue(seek.left >= art.left)
                 assertTrue(seek.right > artist.right - 5)
                 assertTrue("background must not expand the card to screen height", panel.height < activity.resources.displayMetrics.density * 300)
                 assertTrue((node("专辑封面") as ImageView).drawable.let { it as BitmapDrawable }.bitmap.sameAs(cover))

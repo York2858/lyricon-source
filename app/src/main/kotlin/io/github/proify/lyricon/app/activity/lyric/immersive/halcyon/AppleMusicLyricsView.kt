@@ -20,6 +20,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -44,7 +45,6 @@ import io.github.proify.lyricon.app.activity.lyric.immersive.halcyon.SettingsMan
 import io.github.proify.lyricon.app.activity.lyric.immersive.halcyon.model.isSingingAt
 import io.github.proify.lyricon.app.activity.lyric.immersive.halcyon.model.LyricLine
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.delay
 import kotlin.math.abs
@@ -231,9 +231,11 @@ internal fun AppleMusicLyricsView(
     var hasPositionedScroll by remember(lyrics) { mutableStateOf(false) }
     var deferAutoScroll by remember { mutableStateOf(false) }
     var lastFollowRequest by remember { mutableLongStateOf(followRequest) }
-    LaunchedEffect(userDragging, followRequest) {
-        if (lastFollowRequest != followRequest) {
+    var lastFocusOffsetRatio by remember { mutableFloatStateOf(focusOffsetRatio) }
+    LaunchedEffect(userDragging, followRequest, focusOffsetRatio) {
+        if (lastFollowRequest != followRequest || lastFocusOffsetRatio != focusOffsetRatio) {
             lastFollowRequest = followRequest
+            lastFocusOffsetRatio = focusOffsetRatio
             listState.stopScroll()
             deferAutoScroll = false
         } else if (userDragging) {
@@ -341,50 +343,7 @@ internal fun AppleMusicLyricsView(
         backgroundFocusLineIndex = backgroundFocusIndex
     )
     val density = LocalDensity.current
-    val focusOffsetNudgePx = with(density) { focusOffsetNudgeDp.toPx() }
-    val focusOffsetPx = focusOffsetDp?.let { with(density) { it.toPx() } }
     val autoScrollShift = remember(listState) { LyricAutoScrollShift() }
-    LaunchedEffect(pageVisible, scrollTargetIndex, userDragging, deferAutoScroll, focusOffsetNudgePx, focusOffsetPx, followRequest) {
-        if (!pageVisible || userDragging || deferAutoScroll) return@LaunchedEffect
-        // Do not issue the first scroll before LazyColumn has a viewport; that was making the
-        // focus line land under the page header until the user manually scrolled.
-        val viewportHeight = snapshotFlow {
-            listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset
-        }.filter { it > 0 }.first()
-        val desiredItemOffset = if (focusOffsetPx != null) {
-            (focusOffsetPx - focusOffsetNudgePx).coerceAtLeast(0f)
-        } else {
-            (viewportHeight * focusOffsetRatio - focusOffsetNudgePx).coerceAtLeast(0f)
-        }
-
-        if (!hasPositionedScroll) {
-            // Initial positioning should not fly through the whole song when the player is
-            // restored in the middle of a track.
-            listState.scrollToItem(scrollTargetIndex, -desiredItemOffset.toInt())
-            hasPositionedScroll = true
-            return@LaunchedEffect
-        }
-
-        // Move the layout target once; each visible row follows with its own retained spring.
-        // A single LazyColumn spring moves all lines as a rigid block and cannot produce the wave.
-        repeat(LYRIC_SCROLL_CORRECTION_PASSES) {
-            val info = listState.layoutInfo
-            val items = info.visibleItemsInfo
-            if (items.isEmpty()) return@repeat
-            val target = items.firstOrNull { it.index == scrollTargetIndex }
-            if (target == null) {
-                listState.scrollToItem(scrollTargetIndex, -desiredItemOffset.toInt())
-            } else {
-                val distance = target.offset - desiredItemOffset
-                if (abs(distance) <= LYRIC_SCROLL_VISIBILITY_THRESHOLD_PX) return@LaunchedEffect
-                if (!listState.isScrollInProgress) {
-                    autoScrollShift.record(distance)
-                    listState.dispatchRawDelta(distance)
-                }
-            }
-            androidx.compose.runtime.withFrameNanos { }
-        }
-    }
     val defaultTextAlign = when (lyricTextAlign) {
         SettingsManager.PLAYER_LYRIC_ALIGN_CENTER -> TextAlign.Center
         SettingsManager.PLAYER_LYRIC_ALIGN_RIGHT -> TextAlign.End
@@ -392,7 +351,7 @@ internal fun AppleMusicLyricsView(
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize().lyricViewportEdges(edgeFeatherEnabled, userScrollEnabled).playerLyricPerspective(perspectiveEffectEnabled, perspectiveYAngle, lyricTextAlign)) {
-        val trailingLineHeight = with(LocalDensity.current) { trailingLineHeightPx.toDp() }
+        val trailingLineHeight = with(density) { trailingLineHeightPx.toDp() }
         // The first lyric has no preceding rows that LazyColumn can scroll through. Reserve its
         // focus offset as actual leading content so 00:00 lyrics land at the same visual anchor
         // instead of sticking to the top edge of compact/immersive lyric viewports.
@@ -422,6 +381,40 @@ internal fun AppleMusicLyricsView(
             )
         } else {
             bottomContentPadding
+        }
+        val desiredItemOffset = with(density) {
+            resolveAppleMusicLyricsItemOffset(maxHeight, focusOffsetRatio, leadingFocusPadding,
+                focusOffsetNudgeDp, focusOffsetDp).toPx()
+        }
+        LaunchedEffect(pageVisible, scrollTargetIndex, userDragging, deferAutoScroll, followRequest,
+            focusOffsetRatio, leadingFocusPadding, desiredItemOffset) {
+            if (!pageVisible || userDragging || deferAutoScroll) return@LaunchedEffect
+            // Wait for the list to measure before placing the active lyric.
+            snapshotFlow { listState.layoutInfo.viewportSize.height }.first { it > 0 }
+
+            if (!hasPositionedScroll) {
+                listState.scrollToItem(scrollTargetIndex, -desiredItemOffset.toInt())
+                hasPositionedScroll = true
+                return@LaunchedEffect
+            }
+
+            // Shift the layout target once so that each visible lyric retains its own spring.
+            repeat(LYRIC_SCROLL_CORRECTION_PASSES) {
+                val items = listState.layoutInfo.visibleItemsInfo
+                if (items.isEmpty()) return@repeat
+                val target = items.firstOrNull { it.index == scrollTargetIndex }
+                if (target == null) {
+                    listState.scrollToItem(scrollTargetIndex, -desiredItemOffset.toInt())
+                } else {
+                    val distance = target.offset - desiredItemOffset
+                    if (abs(distance) <= LYRIC_SCROLL_VISIBILITY_THRESHOLD_PX) return@LaunchedEffect
+                    if (!listState.isScrollInProgress) {
+                        autoScrollShift.record(distance)
+                        listState.dispatchRawDelta(distance)
+                    }
+                }
+                withFrameNanos { }
+            }
         }
         androidx.compose.runtime.CompositionLocalProvider(LocalReferenceLyricMotion provides sustainMotion) {
         LazyColumn(
@@ -602,6 +595,17 @@ internal fun resolveAppleMusicLyricsLeadingPadding(
     minimumTopPadding,
     ((fixedFocusOffset ?: (viewportHeight * focusOffsetRatio.coerceIn(0f, 1f))) - focusOffsetNudge).coerceAtLeast(0.dp)
 )
+
+// LazyColumn item offsets are relative to the content start, after the leading padding.
+internal fun resolveAppleMusicLyricsItemOffset(
+    viewportHeight: Dp,
+    focusOffsetRatio: Float,
+    leadingPadding: Dp,
+    focusOffsetNudge: Dp = 0.dp,
+    fixedFocusOffset: Dp? = null
+): Dp = resolveAppleMusicLyricsLeadingPadding(
+    viewportHeight, focusOffsetRatio, 0.dp, focusOffsetNudge, fixedFocusOffset
+) - leadingPadding
 
 /**
  * Leaves enough scrollable space after the final lyric for its top edge to reach the same

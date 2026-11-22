@@ -53,6 +53,9 @@ class StatusBarViewController(
 ) : ScreenStateMonitor.ScreenStateListener {
     companion object {
         const val TAG = "StatusBarViewController"
+
+        /** 合并高频全局布局，最多每 120 ms 重算一次可见性与触摸区域。 */
+        private const val GLOBAL_LAYOUT_THROTTLE_MS = 120L
     }
 
     val context: Context = statusBarView.context.applicationContext
@@ -79,9 +82,19 @@ class StatusBarViewController(
         }
     }
 
-    private val onGlobalLayoutListener = ViewTreeObserver.OnGlobalLayoutListener {
+    private var layoutUpdatePending = false
+
+    private val layoutUpdateTask = Runnable {
+        layoutUpdatePending = false
         applyVisibilityRulesNow()
         StatusBarLyricTouchRouter.updateTouchBounds(this)
+    }
+
+    private val onGlobalLayoutListener = ViewTreeObserver.OnGlobalLayoutListener {
+        // 布局风暴期间合并处理，避免每次全局布局都遍历状态栏视图树。
+        if (layoutUpdatePending) return@OnGlobalLayoutListener
+        layoutUpdatePending = true
+        statusBarView.postDelayed(layoutUpdateTask, GLOBAL_LAYOUT_THROTTLE_MS)
 //        // 无副作用复核:布局事件也是状态栏颜色可能的变更时机(补救观察点)
 //        StatusBarColorMonitor.refresh()
     }
@@ -94,6 +107,7 @@ class StatusBarViewController(
         ScreenStateMonitor.addListener(this)
         lyricView.isSleepMode = ScreenStateMonitor.state == ScreenStateMonitor.ScreenState.OFF
         lyricView.onPlayingChanged = { _ -> }
+        lyricView.onPositionDemandChanged = { LyricViewController.refreshPositionDemand() }
 
         // 手势控制:读取偏好并绑定回调,手势动作可配置
         refreshGestureConfig()
@@ -120,10 +134,12 @@ class StatusBarViewController(
         StatusBarLyricTouchRouter.unregister(this)
         coverJob?.cancel()
         statusBarView.removeOnAttachStateChangeListener(statusBarAttachListener)
+        statusBarView.removeCallbacks(layoutUpdateTask)
         statusBarView.viewTreeObserver.removeOnGlobalLayoutListener(onGlobalLayoutListener)
         lyricView.removeOnAttachStateChangeListener(lyricAttachListener)
         ScreenStateMonitor.removeListener(this)
         lyricView.onPlayingChanged = null
+        lyricView.onPositionDemandChanged = null
         lyricView.gestureListener = null
         lyricView.gestureStartFilter = null
         lyricView.setOnClickListener(null)

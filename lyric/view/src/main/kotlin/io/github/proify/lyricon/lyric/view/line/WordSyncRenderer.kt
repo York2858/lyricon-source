@@ -76,12 +76,20 @@ internal class WordSyncRenderer(private val view: LyricLineView) : LineRenderer 
      */
     private var silentExtrapolationMs = 0L
 
+    /** 播放器暂停时立即定格特效，不再进行词间隙外推。 */
+    var playbackPaused: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            if (value) silentExtrapolationMs = 0L
+        }
+
     override val isPlaying get() = progressAnimator.isAnimating
     override val isFinished get() = progressAnimator.hasFinished
     override val isStarted get() = progressAnimator.hasStarted
-    override val needsFrame get() = progressAnimator.isAnimating ||
+    override val needsFrame get() = !playbackPaused && (progressAnimator.isAnimating ||
             (isCharMotionEnabled && !isScrollOnly && isStarted && !isFinished &&
-                    silentExtrapolationMs < MAX_SILENT_EXTRAPOLATION_MS)
+                    silentExtrapolationMs < MAX_SILENT_EXTRAPOLATION_MS))
 
     fun setTextSize(size: Float) {
         bgPaint.textSize = size
@@ -162,6 +170,7 @@ internal class WordSyncRenderer(private val view: LyricLineView) : LineRenderer 
         state: LineState,
         viewWidth: Int
     ): Boolean {
+        if (playbackPaused) return false
         if (progressAnimator.isAnimating) {
             // 动画期间逐帧外推特效时钟：保证位移动画与高亮同样平滑（不依赖外部更新频率）。
             advancePlaybackClock(deltaNanos)

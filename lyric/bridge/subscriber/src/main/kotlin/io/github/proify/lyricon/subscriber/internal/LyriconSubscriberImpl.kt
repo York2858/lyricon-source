@@ -68,6 +68,8 @@ internal class LyriconSubscriberImpl(
     override fun unsubscribeActivePlayer(listener: ActivePlayerListener): Boolean =
         remote.removeActivePlayerListener(listener)
 
+    override fun notifyPositionDemandChanged() = remote.notifyPositionDemandChanged()
+
     override fun register() {
         registration.start(manual = true)
     }

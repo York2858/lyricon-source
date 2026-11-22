@@ -62,6 +62,17 @@ interface ActivePlayerListener {
     fun onSeekTo(position: Long)
 
     /**
+     * 当前是否需要高频播放进度更新。
+     *
+     * 歌词不可见（或不需要逐字刷新）时返回 false，订阅端会降低共享内存轮询频率，
+     * 仅保留最新位置，从而减少主线程分发开销。默认返回 true。
+     *
+     * 返回值变化后应调用 [LyriconSubscriber.notifyPositionDemandChanged]，
+     * 让订阅端立即按新需求调整轮询频率。
+     */
+    fun isHighFrequencyPositionRequired(): Boolean = true
+
+    /**
      * 当是否显示歌词翻译的配置发生变更时触发。
      *
      * @param isDisplayTranslation 是否显示翻译。

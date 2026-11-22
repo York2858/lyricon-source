@@ -14,6 +14,7 @@ import io.github.proify.lyricon.app.bridge.FavoriteTrack
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.lyric.style.LyricStyle
 import io.github.proify.lyricon.subscriber.ActivePlayerListener
+import io.github.proify.lyricon.subscriber.LyriconSubscriber
 import io.github.proify.lyricon.subscriber.ProviderInfo
 import io.github.proify.lyricon.xposed.systemui.lyric.processor.LyricDataProcessor
 import io.github.proify.lyricon.xposed.systemui.util.SystemUIMediaUtils
@@ -52,6 +53,14 @@ object LyricDataHub : ActivePlayerListener {
 
     /** 当前活动的提供者信息 */
     private var providerInfo: ProviderInfo? = null
+
+    /** 订阅端实例，用于在进度需求变化时立即调整轮询频率。 */
+    @Volatile
+    private var subscriber: LyriconSubscriber? = null
+
+    /** 是否存在需要高频进度的可见歌词。 */
+    @Volatile
+    private var highFrequencyPositionDemand: Boolean = false
 
     private val trackProgressGate = TrackProgressGate()
     private var pendingPublication = false
@@ -128,6 +137,20 @@ object LyricDataHub : ActivePlayerListener {
     fun addListener(listener: ActivePlayerListener) {
         listeners.add(listener)
     }
+
+    /** 绑定订阅端，用于在进度需求变化时立即生效。 */
+    fun bindSubscriber(subscriber: LyriconSubscriber) {
+        this.subscriber = subscriber
+    }
+
+    /** 更新进度需求；变化时唤醒订阅端重新评估轮询频率。 */
+    fun updatePositionDemand(required: Boolean) {
+        if (highFrequencyPositionDemand == required) return
+        highFrequencyPositionDemand = required
+        subscriber?.notifyPositionDemandChanged()
+    }
+
+    override fun isHighFrequencyPositionRequired(): Boolean = highFrequencyPositionDemand
 
     fun removeListener(listener: ActivePlayerListener) {
         listeners.remove(listener)
@@ -281,7 +304,8 @@ object LyricDataHub : ActivePlayerListener {
     override fun onPlaybackStateChanged(isPlaying: Boolean) {
         StatusBarViewManager.runOnMainThread {
             playing = isPlaying
-            if (!isWaitingForTrack) listeners.forEach { it.onPlaybackStateChanged(isPlaying) }
+            // A pause must clear the visible window even if the next track's lyrics are pending.
+            if (!isPlaying || !isWaitingForTrack) listeners.forEach { it.onPlaybackStateChanged(isPlaying) }
         }
     }
 

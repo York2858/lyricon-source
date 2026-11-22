@@ -162,6 +162,18 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
             if (value) animator.startIfNeeded() else animator.stop()
         }
 
+    /**
+     * 播放器暂停状态：暂停时停止逐帧任务并定格特效，
+     * 恢复播放后由 [updatePosition] 重新启动。
+     */
+    var playbackPaused: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            syncRenderer.playbackPaused = value
+            if (value) animator.stop() else animator.startIfNeeded()
+        }
+
     override fun onVisibilityAggregated(isVisible: Boolean) {
         super.onVisibilityAggregated(isVisible)
         if (isVisible) animator.startIfNeeded() else animator.stop()

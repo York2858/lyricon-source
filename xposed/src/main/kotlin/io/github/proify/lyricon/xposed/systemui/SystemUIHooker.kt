@@ -199,6 +199,7 @@ object SystemUIHooker : PackageHooker() {
 
         val subscriber = LyriconFactory.createSubscriber(appContext!!)
         this.subscriber = subscriber
+        LyricDataHub.bindSubscriber(subscriber)
 
         subscriber.subscribeActivePlayer(LyricDataHub)
 

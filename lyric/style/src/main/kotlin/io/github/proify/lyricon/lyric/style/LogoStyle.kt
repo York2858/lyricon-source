@@ -20,6 +20,9 @@ data class LogoStyle(
     var enable: Boolean = Defaults.ENABLE,
     var style: Int = Defaults.STYLE,
 
+    /** 圆形封面是否持续旋转（唱片模式）。 */
+    var rotateCover: Boolean = Defaults.ROTATE_COVER,
+
     var enableCustomColor: Boolean = Defaults.ENABLE_CUSTOM_COLOR,
     var lightModeColor: LogoColor = Defaults.LIGHT_MODE_COLOR,
     var darkModeColor: LogoColor = Defaults.DARK_MODE_COLOR,
@@ -38,6 +41,10 @@ data class LogoStyle(
     override fun onLoad(preferences: SharedPreferences) {
         enable = preferences.getBoolean("lyric_style_logo_enable", Defaults.ENABLE)
         style = preferences.getInt("lyric_style_logo_style", Defaults.STYLE)
+        rotateCover = preferences.getBoolean(
+            "lyric_style_logo_rotate_cover",
+            Defaults.ROTATE_COVER
+        )
 
         enableCustomColor = preferences.getBoolean(
             "lyric_style_logo_enable_custom_color",
@@ -73,6 +80,7 @@ data class LogoStyle(
     override fun onWrite(editor: SharedPreferences.Editor) {
         editor.putBoolean("lyric_style_logo_enable", enable)
         editor.putInt("lyric_style_logo_style", style)
+        editor.putBoolean("lyric_style_logo_rotate_cover", rotateCover)
 
         editor.putBoolean("lyric_style_logo_enable_custom_color", enableCustomColor)
         editor.putString("lyric_style_logo_color_light_mode", lightModeColor.toJson())
@@ -94,6 +102,7 @@ data class LogoStyle(
     object Defaults {
         const val ENABLE: Boolean = true
         const val STYLE: Int = STYLE_PROVIDER_LOGO
+        const val ROTATE_COVER: Boolean = true
 
         const val ENABLE_CUSTOM_COLOR: Boolean = false
         val LIGHT_MODE_COLOR: LogoColor = LogoColor()

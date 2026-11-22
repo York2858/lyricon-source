@@ -123,6 +123,42 @@ class NotificationArtworkTest {
         assertNull(NotificationArtwork.icon(notification()))
     }
 
+    @Test fun repeatedNotificationReusesEncodedBytesAndChangedArtworkReplacesThem() {
+        val source = bitmap()
+        val title = "cover-dedup-${System.nanoTime()}"
+        val packageName = "io.github.proify.lyricon.coverfixture"
+        fun post(id: Int): ImmersiveNotificationCover.Cover {
+            val notification = roundTrip(notification().apply {
+                extras.putCharSequence(Notification.EXTRA_TITLE, title)
+                extras.putParcelable(Notification.EXTRA_LARGE_ICON, Icon.createWithBitmap(source))
+            })
+            val item = StatusBarNotification(packageName, packageName, id, null,
+                Process.myUid(), Process.myPid(), 0, notification, Process.myUserHandle(), System.currentTimeMillis())
+            ImmersiveNotificationCover.onNotificationPosted(item)
+            val deadline = SystemClock.elapsedRealtime() + 5000
+            while (SystemClock.elapsedRealtime() < deadline) {
+                val cover = ImmersiveNotificationCover.find(packageName, title)
+                if (cover?.notificationKey == item.key) return cover
+                SystemClock.sleep(20)
+            }
+            error("Artwork was not published for notification $id")
+        }
+        try {
+            ImmersiveNotificationCover.attach(context)
+            val first = post(1)
+            val duplicate = post(2)
+            assertSame(first.bytes, duplicate.bytes)
+            assertEquals(first.key, duplicate.key)
+
+            source.eraseColor(Color.BLUE)
+            val changed = post(3)
+            assertNotEquals(first.key, changed.key)
+            assertFalse(first.bytes.contentEquals(changed.bytes))
+        } finally {
+            source.recycle()
+        }
+    }
+
     @Test fun systemUiUnattachedListenerDoesNotSupplyTheArtworkContext() {
         val listener = object : NotificationListenerService() {}
         assertNull(listener.baseContext)

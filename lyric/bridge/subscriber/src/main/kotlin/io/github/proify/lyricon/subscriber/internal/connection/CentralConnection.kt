@@ -53,6 +53,9 @@ internal class CentralConnection(
     fun removeActivePlayerListener(listener: ActivePlayerListener): Boolean =
         eventDispatcher.unregisterActivePlayerListener(listener)
 
+    /** 监听器的进度需求变化后，立即重新评估轮询频率。 */
+    fun notifyPositionDemandChanged() = eventDispatcher.notifyPositionDemandChanged()
+
     /**
      * 断开当前远端服务。
      *

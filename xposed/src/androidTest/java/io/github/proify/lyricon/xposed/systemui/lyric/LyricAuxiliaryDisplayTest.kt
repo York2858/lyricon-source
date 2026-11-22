@@ -1,20 +1,29 @@
 package io.github.proify.lyricon.xposed.systemui.lyric
 
+import android.graphics.PixelFormat
 import android.view.View
+import android.view.WindowManager
+import android.widget.FrameLayout
+import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.proify.lyricon.lyric.model.RichLyricLine
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.lyric.style.LyricStyle
+import io.github.proify.lyricon.lyric.style.TextStyle
 import io.github.proify.lyricon.lyric.view.RichLyricLineView
 import io.github.proify.lyricon.statusbarlyric.SuperText
+import io.github.proify.lyricon.statusbarlyric.StatusBarLyric
 import io.github.proify.lyricon.lyric.view.LyricViewStyle
 import io.github.proify.lyricon.lyric.view.AuxiliaryLineLayout
 import io.github.proify.lyricon.lyric.view.TextLook
 import io.github.proify.lyricon.lyric.view.Highlight
 import io.github.proify.lyricon.lyric.view.WordMotion
+import io.github.proify.lyricon.xposed.systemui.lyric.control.MediaPanelTestActivity
 import android.graphics.Color
 import org.junit.Assert.*
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /** Exercises the actual view/style path in an isolated APK without touching player settings. */
 class LyricAuxiliaryDisplayTest {
@@ -22,6 +31,153 @@ class LyricAuxiliaryDisplayTest {
     private val context get() = instrumentation.targetContext
     private val source = RichLyricLine(begin = 0, end = 8000, text = "原歌词", roma = "romaji", translation = "翻译")
     private fun line(view: SuperText) = view.getChildAt(0) as RichLyricLineView
+
+    @Test fun hiddenLyricsWaitForTheFirstLineAndResumeAtTheLatestPosition() {
+        ActivityScenario.launch(MediaPanelTestActivity::class.java).use { scenario ->
+            lateinit var lyric: StatusBarLyric
+            scenario.onActivity { activity ->
+                val style = LyricStyle().apply {
+                    basicStyle.hideOnLockScreen = false
+                    packageStyle.text.placeholderFormat = TextStyle.PlaceholderFormat.NONE
+                    packageStyle.text.enableEnterAnim = false
+                    packageStyle.anim.enable = false
+                }
+                lyric = StatusBarLyric(activity, style, null).apply {
+                    setSong(Song(lyrics = listOf(
+                        RichLyricLine(begin = 1000, end = 1999, text = "first"),
+                        RichLyricLine(begin = 2000, end = 4000, text = "second")
+                    )))
+                    setPlaying(true)
+                }
+                activity.setContentView(FrameLayout(activity).apply { addView(lyric) })
+            }
+            scenario.onActivity {
+                lyric.setPosition(500)
+                assertEquals(View.GONE, lyric.visibility)
+                assertEquals(0, lyric.textView.childCount)
+
+                lyric.setPosition(1000)
+                assertEquals(View.VISIBLE, lyric.visibility)
+                assertEquals("first", line(lyric.textView).main.model.text)
+
+                lyric.isDisabledVisible = true
+                lyric.setPosition(2500)
+                assertEquals("first", line(lyric.textView).main.model.text)
+
+                lyric.isDisabledVisible = false
+                assertEquals(View.VISIBLE, lyric.visibility)
+            }
+            scenario.onActivity {
+                assertEquals("second", line(lyric.textView).main.model.text)
+            }
+        }
+    }
+
+    @Test fun floatingWindowShowsTheFirstLineAndRecoversAfterTimeoutAndSleep() {
+        ActivityScenario.launch(MediaPanelTestActivity::class.java).use { scenario ->
+            lateinit var window: FloatingLyricWindow
+            lateinit var lyric: StatusBarLyric
+            val firstLayout = CountDownLatch(1)
+            val reopenedLayout = CountDownLatch(1)
+            val resumedLayout = CountDownLatch(1)
+            var layoutReady = firstLayout
+            val hiddenAfterTimeout = CountDownLatch(1)
+            scenario.onActivity { activity ->
+                val style = LyricStyle().apply {
+                    basicStyle.hideOnLockScreen = false
+                    basicStyle.noUpdateHideTimeout = 1
+                    packageStyle.text.placeholderFormat = TextStyle.PlaceholderFormat.NONE
+                    packageStyle.text.enableEnterAnim = false
+                    packageStyle.anim.enable = false
+                }
+                lyric = StatusBarLyric(activity, style, null).apply {
+                    textView.isFloatingLyric = true
+                    setSong(Song(lyrics = listOf(
+                        RichLyricLine(begin = 1000, end = 1999, text = "first"),
+                        RichLyricLine(begin = 2000, end = 2999, text = "second"),
+                        RichLyricLine(begin = 3000, end = 4000, text = "third")
+                    )))
+                    setPlaying(true)
+                }
+                val params = WindowManager.LayoutParams(
+                    400,
+                    WindowManager.LayoutParams.WRAP_CONTENT,
+                    WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                    PixelFormat.TRANSLUCENT
+                ).apply { token = activity.window.decorView.windowToken }
+                window = FloatingLyricWindow(activity.windowManager, lyric, params) { layoutReady.countDown() }
+                window.setEnabled(true)
+            }
+            try {
+                assertTrue("floating window lays out after opening", firstLayout.await(5, TimeUnit.SECONDS))
+                scenario.onActivity {
+                    assertEquals(View.VISIBLE, lyric.windowVisibility)
+                    lyric.setPosition(500)
+                    assertEquals(View.GONE, lyric.visibility)
+                    assertFalse(lyric.isPositionTracking)
+                    lyric.setPosition(1000)
+                    assertEquals("first", line(lyric.textView).main.model.text)
+                    assertTrue(lyric.isPositionTracking)
+                    lyric.onPositionDemandChanged = {
+                        if (!lyric.isPositionTracking) hiddenAfterTimeout.countDown()
+                    }
+                }
+                assertTrue("lyric timeout changes position demand", hiddenAfterTimeout.await(5, TimeUnit.SECONDS))
+                instrumentation.waitForIdleSync()
+                scenario.onActivity {
+                    assertEquals(View.GONE, lyric.visibility)
+                    assertEquals(View.VISIBLE, lyric.windowVisibility)
+                    lyric.setPosition(1500)
+                    assertEquals(View.GONE, lyric.visibility)
+
+                    lyric.setPosition(2200)
+                    assertEquals("second", line(lyric.textView).main.model.text)
+                    assertTrue(lyric.isPositionTracking)
+                    lyric.isSleepMode = true
+                    assertFalse(lyric.isPositionTracking)
+                    lyric.setPosition(3100)
+                    assertEquals("second", line(lyric.textView).main.model.text)
+                    lyric.isSleepMode = false
+                    assertTrue(lyric.isPositionTracking)
+                    assertEquals("third", line(lyric.textView).main.model.text)
+
+                    lyric.isDisabledVisible = true
+                    repeat(2) { window.setEnabled(false) }
+                    assertFalse(lyric.isAttachedToWindow)
+                    assertFalse(lyric.isPositionTracking)
+                    lyric.setPosition(1100)
+                    lyric.isDisabledVisible = false
+                    layoutReady = reopenedLayout
+                    repeat(2) { window.setEnabled(true) }
+                }
+                assertTrue("floating window lays out after reopening", reopenedLayout.await(5, TimeUnit.SECONDS))
+                scenario.onActivity {
+                    assertTrue(lyric.isAttachedToWindow)
+                    assertTrue(lyric.isPositionTracking)
+                    assertEquals("first", line(lyric.textView).main.model.text)
+
+                    lyric.onPlayingChanged = { window.setEnabled(true) }
+                    lyric.setPlaying(false)
+                    assertFalse(lyric.isAttachedToWindow)
+                    assertFalse(lyric.isPositionTracking)
+                    lyric.setPosition(2200)
+                    layoutReady = resumedLayout
+                    lyric.setPlaying(true)
+                }
+                assertTrue("floating window lays out after resuming", resumedLayout.await(5, TimeUnit.SECONDS))
+                scenario.onActivity {
+                    assertTrue(lyric.isAttachedToWindow)
+                    assertTrue(lyric.isPositionTracking)
+                    assertEquals("second", line(lyric.textView).main.model.text)
+                }
+            } finally {
+                scenario.onActivity { window.setEnabled(false) }
+            }
+        }
+    }
+
     private fun show(floating: Boolean, preferRoma: Boolean = false, lyric: RichLyricLine = source): Pair<SuperText, LyricStyle> {
         val style = LyricStyle().apply { basicStyle.secondaryLineShowsRoma = preferRoma }
         val view = SuperText(context).apply {

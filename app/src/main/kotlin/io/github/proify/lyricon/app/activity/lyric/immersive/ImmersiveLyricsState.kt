@@ -1,8 +1,10 @@
 package io.github.proify.lyricon.app.activity.lyric.immersive
 
 import android.app.Application
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Bundle
@@ -49,6 +51,7 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
     var musicTagChoices by mutableStateOf<List<SongVersionChoice>>(emptyList()); private set
     var musicTagsBusy by mutableStateOf(false); private set
     private var musicTagToken = ""
+    private var musicTagTarget: String? = null
     private var musicTagIdentity = ""
     private var favoriteTrack: FavoriteTrack? = null
     private var favoriteQuery: kotlinx.coroutines.Job? = null
@@ -320,10 +323,66 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
         }
     }
 
-    fun openMusicTags() {
+    fun openMusicTags() = openMusicTarget(null)
+
+    fun openAlbumPage() = openLyricoPage(Contract.OPEN_TARGET_ALBUM)
+
+    fun openArtistPage() = openLyricoPage(Contract.OPEN_TARGET_ARTIST)
+
+    fun openCommentsPage() = openLyricoPage(Contract.OPEN_TARGET_COMMENTS)
+
+    fun openReviewPage() = openLyricoPage(Contract.OPEN_TARGET_REVIEW)
+
+    /**
+     * Album/artist/comments/review pages only need track metadata, so they are opened
+     * directly with a metadata intent instead of resolving a playable local audio file.
+     */
+    private fun openLyricoPage(target: String) {
+        if (demo) { playbackError = "示例歌曲没有可打开的音乐信息"; return }
+        val missing = when (target) {
+            Contract.OPEN_TARGET_ALBUM, Contract.OPEN_TARGET_REVIEW -> when {
+                album.isBlank() -> "当前歌曲没有专辑信息"
+                artist.isBlank() -> "当前歌曲没有歌手信息"
+                else -> null
+            }
+            Contract.OPEN_TARGET_ARTIST -> "当前歌曲没有歌手信息".takeIf { artist.isBlank() }
+            Contract.OPEN_TARGET_COMMENTS -> "当前歌曲没有歌曲信息".takeIf { title.isBlank() }
+            else -> null
+        }
+        if (missing != null) { playbackError = missing; return }
+        val app = getApplication<Application>()
+        val intent = Intent(Contract.ACTION_OPEN_PAGE)
+            .putExtra(Contract.EXTRA_OPEN_TARGET, target)
+            .putExtra(Contract.EXTRA_TITLE, title)
+            .putExtra(Contract.EXTRA_ARTIST, artist)
+            .putExtra(Contract.EXTRA_ALBUM, album)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        @Suppress("DEPRECATION")
+        val activity = app.packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            .filter { info ->
+                val pkg = info.activityInfo.packageName
+                (pkg == Contract.LYRICO_PACKAGE || pkg.startsWith("${Contract.LYRICO_PACKAGE}.")) &&
+                    info.activityInfo.exported && info.activityInfo.enabled && info.activityInfo.applicationInfo.enabled
+            }
+            .sortedWith(compareBy({ it.activityInfo.packageName != Contract.LYRICO_PACKAGE }, { it.activityInfo.packageName }))
+            .firstOrNull()?.activityInfo
+        if (activity == null) {
+            playbackError = "未找到支持该页面的 Lyrico，请先安装新版"
+            return
+        }
+        intent.setComponent(ComponentName(activity.packageName, activity.name))
+        try {
+            app.startActivity(intent)
+        } catch (error: Exception) {
+            playbackError = error.message ?: "无法打开 Lyrico"
+        }
+    }
+
+    fun openMusicTarget(target: String?) {
         if (demo) { playbackError = "示例歌曲没有可打开的音乐文件"; return }
         if (musicTagsBusy || musicTagChoices.isNotEmpty()) return
         val requestedIdentity = identity
+        musicTagTarget = target
         musicTagsBusy = true
         viewModelScope.launch {
             try {
@@ -339,7 +398,7 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
                 musicTagIdentity = requestedIdentity
                 musicTagChoices = choices
                 if (choices.size == 1) {
-                    launchMusicTagVersion(choices.single())
+                    launchMusicTagVersion(choices.single(), target = target)
                 }
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
@@ -348,16 +407,17 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
         }
     }
 
-    fun dismissMusicTagChoices() { musicTagChoices = emptyList(); musicTagToken = "" }
+    fun dismissMusicTagChoices() { musicTagChoices = emptyList(); musicTagToken = ""; musicTagTarget = null }
 
     fun selectMusicTagVersion(choice: SongVersionChoice) {
         if (musicTagsBusy || choice !in musicTagChoices) return
         val token = musicTagToken
+        val target = musicTagTarget
         val targetIdentity = musicTagIdentity
         musicTagsBusy = true
         viewModelScope.launch {
             try {
-                launchMusicTagVersion(choice, token, targetIdentity)
+                launchMusicTagVersion(choice, token, targetIdentity, target)
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
                 playbackError = error.message ?: "无法打开所选歌曲版本"
@@ -366,9 +426,10 @@ internal class ImmersiveLyricsState(application: Application) : AndroidViewModel
     }
 
     private suspend fun launchMusicTagVersion(choice: SongVersionChoice, token: String = musicTagToken,
-        targetIdentity: String = musicTagIdentity) {
+        targetIdentity: String = musicTagIdentity, target: String? = musicTagTarget) {
         val response = request(Contract.OPEN_MUSIC_TAGS, Bundle().apply {
             putString("identity", targetIdentity); putString("token", token); putString("choice_id", choice.id)
+            target?.takeIf(String::isNotBlank)?.let { putString("target", it) }
         })
         check(response?.getBoolean("accepted") == true) { response?.getString("error") ?: "打开 Lyrico 未响应，请重试" }
         dismissMusicTagChoices()

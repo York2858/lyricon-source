@@ -22,6 +22,15 @@ internal object NotificationArtwork {
     }
 
     fun encode(context: Context, icon: Icon): ByteArray? {
+        val bitmap = render(context, icon) ?: return null
+        return try {
+            encode(bitmap)
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    fun render(context: Context, icon: Icon): Bitmap? {
         val original = icon.loadDrawable(context) ?: return null
         // A software Canvas cannot draw a hardware bitmap received through a notification.
         val softwareCopy = (original as? BitmapDrawable)?.bitmap
@@ -35,18 +44,22 @@ internal object NotificationArtwork {
             val width = (sourceWidth * scale).toInt().coerceAtLeast(1)
             val height = (sourceHeight * scale).toInt().coerceAtLeast(1)
             val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            return try {
+            try {
                 drawable.setBounds(0, 0, width, height)
                 drawable.draw(Canvas(bitmap))
-                ByteArrayOutputStream().use { output ->
-                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output))
-                    output.toByteArray()
-                }
-            } finally {
+                return bitmap
+            } catch (error: Throwable) {
                 bitmap.recycle()
+                throw error
             }
         } finally {
             softwareCopy?.recycle()
         }
     }
+
+    fun encode(bitmap: Bitmap): ByteArray =
+        ByteArrayOutputStream().use { output ->
+            check(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output))
+            output.toByteArray()
+        }
 }

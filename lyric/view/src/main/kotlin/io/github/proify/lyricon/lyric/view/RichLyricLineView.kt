@@ -127,6 +127,13 @@ class RichLyricLineView(
         tertiary.updatePosition(position)
     }
 
+    /** 同步播放器暂停状态到主/副/第三行。 */
+    fun setPlaybackPaused(paused: Boolean) {
+        main.playbackPaused = paused
+        secondary.playbackPaused = paused
+        tertiary.playbackPaused = paused
+    }
+
     fun requestStartMarquee() {
         requestMarquee = true
         main.requestScroll()

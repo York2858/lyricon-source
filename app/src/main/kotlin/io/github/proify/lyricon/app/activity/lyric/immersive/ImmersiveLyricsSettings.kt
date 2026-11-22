@@ -49,6 +49,17 @@ internal fun Map<String, *>.number(key: String, default: Int) = (this[key] as? N
 internal const val HEADER_TOP_KEY = "header_top"
 internal const val DEFAULT_HEADER_TOP = 28
 internal val HEADER_TOP_RANGE = 0..160
+private const val PORTRAIT_LYRIC_POSITION_KEY = "portrait_lyric_position"
+private const val LANDSCAPE_LYRIC_POSITION_KEY = "landscape_lyric_position"
+private const val DEFAULT_PORTRAIT_LYRIC_POSITION = 24
+private const val DEFAULT_LANDSCAPE_LYRIC_POSITION = 30
+private val LYRIC_POSITION_RANGE = 5..60
+
+internal fun Map<String, *>.lyricFocusRatio(landscape: Boolean): Float {
+    val position = if (landscape) number(LANDSCAPE_LYRIC_POSITION_KEY, DEFAULT_LANDSCAPE_LYRIC_POSITION)
+    else number(PORTRAIT_LYRIC_POSITION_KEY, DEFAULT_PORTRAIT_LYRIC_POSITION)
+    return position.coerceIn(LYRIC_POSITION_RANGE) / 100f
+}
 
 @Composable
 internal fun ImmersiveSettingsContent(manager: SettingsManager, values: Map<String, *>,
@@ -155,10 +166,19 @@ internal fun ImmersiveSettingsContent(manager: SettingsManager, values: Map<Stri
                 }
             }
             "style" -> SettingsCard {
+                PreferenceSlider("竖屏当前歌词位置（%）", PORTRAIT_LYRIC_POSITION_KEY, DEFAULT_PORTRAIT_LYRIC_POSITION,
+                    LYRIC_POSITION_RANGE, manager, values, summary = "以歌词区顶部为起点，数值越小，当前歌词越靠上。")
+                PreferenceSlider("横屏当前歌词位置（%）", LANDSCAPE_LYRIC_POSITION_KEY, DEFAULT_LANDSCAPE_LYRIC_POSITION,
+                    LYRIC_POSITION_RANGE, manager, values)
                 PreferenceSlider("封面行位置", HEADER_TOP_KEY, DEFAULT_HEADER_TOP, HEADER_TOP_RANGE, manager, values,
                     summary = "数值越大，封面行越靠下，留给歌词的空间越少。")
                 PreferenceSlider("歌名字号", "title_size", 22, 12..36, manager, values)
+                PreferenceSlider("专辑字号", "album_size", 14, 10..28, manager, values)
                 PreferenceSlider("歌手字号", "artist_size", 14, 10..28, manager, values)
+                PreferenceSlider("底部图标距底距离（dp）", "bottom_actions_margin", 8, 0..120, manager, values,
+                    summary = "翻译、评论、乐评按钮距屏幕底部的距离。")
+                PreferenceSlider("底部图标大小（dp）", "bottom_actions_size", 36, 20..56, manager, values,
+                    summary = "翻译、评论、乐评按钮图标的显示尺寸。")
                 PreferenceChoice(
                     title = "歌词对齐",
                     items = listOf("左对齐", "居中", "右对齐"),

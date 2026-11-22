@@ -6,7 +6,6 @@
 
 package io.github.proify.lyricon.xposed.systemui.lyric
 
-import android.os.Handler
 import android.media.MediaMetadata
 import android.util.Log
 import io.github.proify.lyricon.common.util.CoverImages
@@ -26,7 +25,6 @@ import io.github.proify.lyricon.subscriber.ActivePlayerListener
 import io.github.proify.lyricon.subscriber.ProviderInfo
 import io.github.proify.lyricon.xposed.logger.YLog
 import io.github.proify.lyricon.xposed.systemui.hook.OplusCapsuleHooker
-import io.github.proify.lyricon.xposed.systemui.lyric.StatusBarViewManager.MAIN_LOOPER
 import io.github.proify.lyricon.xposed.systemui.util.NotificationCoverHelper
 import io.github.proify.lyricon.xposed.systemui.util.SystemUIMediaUtils
 import java.io.File
@@ -73,23 +71,6 @@ object LyricViewController : ActivePlayerListener,
     var currentSong: Song? = null
         private set
 
-    /** 用于处理 UI 刷新任务的 Handler */
-    private val mainHandler by lazy { Handler(MAIN_LOOPER) }
-
-    /** * 高频进度更新任务。
-     * 使用单例 Runnable 减少 GC 压力，仅在进度变更时由主线程调度。
-     */
-    private val frameUpdater = Runnable {
-        if (LyricDataHub.isWaitingForTrack) return@Runnable
-        val controllers = StatusBarViewManager.controllers
-        for (i in controllers.indices) {
-            controllers[i].lyricView.setPosition(currentLogicPosition)
-        }
-        // 悬浮窗歌词：同步逐帧进度
-        runCatching { FloatingLyricController.lyricViewOrNull()?.setPosition(currentLogicPosition) }
-            .onFailure { e -> YLog.error(TAG, "Floating lyric update error", e) }
-    }
-
     init {
         if (DEBUG) YLog.debug(TAG, "Initializing LyricViewController...")
         // 注册数据总线、系统钩子及封面更新监听
@@ -115,7 +96,6 @@ object LyricViewController : ActivePlayerListener,
         YLog.info(TAG, "onSongChanged: ${song?.name}, translatedLines=${song?.lyrics?.count { !it.translation.isNullOrBlank() } ?: 0}")
         val sameTrack = currentSong.isSameTrackAs(song)
         if (!sameTrack) {
-            mainHandler.removeCallbacks(frameUpdater)
             currentLogicPosition = runCatching {
                 val controller = SystemUIMediaUtils.getController(activePackage)
                 val title = controller?.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
@@ -139,6 +119,7 @@ object LyricViewController : ActivePlayerListener,
             it.seekTo(currentLogicPosition)
         }
 
+        refreshPositionDemand()
         updateCoverFileFromSong(song)
     }
 
@@ -163,12 +144,15 @@ object LyricViewController : ActivePlayerListener,
     override fun onActiveProviderChanged(providerInfo: ProviderInfo?) {
         YLog.info(TAG, "onActiveProviderChanged: $providerInfo")
 
+        isPlaying = false
         this.activePackage = providerInfo?.playerPackageName.orEmpty()
         LyricPrefs.activePackageName = this.activePackage
 
         updateAllControllers {
             resetViewForNewPlayer(this, providerInfo)
         }
+
+        refreshPositionDemand()
 
         updateFloatingLyric {
             it.setSong(null)
@@ -192,16 +176,17 @@ object LyricViewController : ActivePlayerListener,
         this.isPlaying = isPlaying
         updateAllControllers { lyricView.setPlaying(isPlaying) }
         updateFloatingLyric { it.setPlaying(isPlaying) }
+        refreshPositionDemand()
     }
 
     /**
-     * 播放进度正常步进时的回调（通常每秒触发）。
+     * LyricDataHub 已在主线程分发进度。
      * @param position 当前逻辑时间戳
      */
     override fun onPositionChanged(position: Long) {
         this.currentLogicPosition = position
-        // 进度更新极其频繁，直接 post 到 Handler
-        mainHandler.post(frameUpdater)
+        StatusBarViewManager.forEach { it.lyricView.setPosition(position) }
+        updateFloatingLyric { it.setPosition(position) }
     }
 
     /**
@@ -252,17 +237,36 @@ object LyricViewController : ActivePlayerListener,
      * 应用全局配置更新（如字体颜色、阴影等样式变更）。
      * @param style 新的歌词样式配置
      */
-    fun applyConfigurationUpdate(style: LyricStyle) {
+    fun applyConfigurationUpdate(style: LyricStyle, reprocessData: Boolean = true) {
         updateAllControllers { updateLyricStyle(style) }
         StatusBarViewManager.runOnMainThread {
             FloatingLyricController.updateLyricStyle(LyricPrefs.floatingLyricStyle)
         }
-        LyricDataHub.reprocessCurrentSong()
+        if (reprocessData) {
+            LyricDataHub.reprocessCurrentSong()
+        } else {
+            // 纯展示配置（颜色、字号、边距等）复用已加工数据，只重做显示层变换。
+            LyricDataHub.refreshDisplayForMode()
+        }
     }
 
     fun restoreCurrentPosition() {
         updateAllControllers { lyricView.seekTo(currentLogicPosition) }
         updateFloatingLyric { it.seekTo(currentLogicPosition) }
+    }
+
+    /**
+     * 根据当前可见歌词重新评估进度需求。
+     *
+     * 所有歌词视图都不可见时通知订阅端降频，只保留最新位置，
+     * 避免歌词隐藏后仍持续进行高频轮询与主线程分发。
+     */
+    fun refreshPositionDemand() {
+        StatusBarViewManager.runOnMainThread {
+            val required = StatusBarViewManager.controllers.any { it.lyricView.isPositionTracking } ||
+                    FloatingLyricController.lyricViewOrNull()?.isPositionTracking == true
+            LyricDataHub.updatePositionDemand(required)
+        }
     }
 
     /**

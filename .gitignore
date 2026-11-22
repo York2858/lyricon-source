@@ -20,6 +20,7 @@ signing.properties
 
 # Documentation and presentation assets (not used by Android builds)
 *.md
+/LOCAL_BUILD_ENVIRONMENT.md
 /docs/
 /resources/
 **/ic_launcher-playstore.png

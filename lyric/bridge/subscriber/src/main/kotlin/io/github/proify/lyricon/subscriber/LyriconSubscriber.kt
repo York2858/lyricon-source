@@ -28,6 +28,14 @@ interface LyriconSubscriber {
     /** 取消 [listener] 对当前活跃播放器状态的订阅。 */
     fun unsubscribeActivePlayer(listener: ActivePlayerListener): Boolean
 
+    /**
+     * 通知订阅端重新评估进度更新需求。
+     *
+     * 当监听器的 [ActivePlayerListener.isHighFrequencyPositionRequired] 返回值变化时调用，
+     * 订阅端会立即按新的需求调整轮询频率，避免降频后的延迟。
+     */
+    fun notifyPositionDemandChanged()
+
     /** 向中心服务发送注册请求。 */
     fun register()
 

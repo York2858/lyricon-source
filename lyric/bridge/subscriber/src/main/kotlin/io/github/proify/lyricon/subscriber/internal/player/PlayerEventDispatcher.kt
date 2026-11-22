@@ -22,10 +22,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.channels.Channel
 import java.nio.ByteBuffer
 import java.util.concurrent.CopyOnWriteArraySet
 
@@ -46,6 +47,9 @@ internal class PlayerEventDispatcher(context: Context) : IActivePlayerListener.S
     private var positionBuffer: ByteBuffer? = null
     private var positionJob: Job? = null
     private val positionLock = Any()
+
+    /** 进度需求变化时唤醒轮询，避免降频后的固定延迟。 */
+    private val demandSignal = Channel<Unit>(Channel.CONFLATED)
     private var playing = false
     private var lastPosition = Long.MIN_VALUE
     private var destroyed = false
@@ -68,6 +72,15 @@ internal class PlayerEventDispatcher(context: Context) : IActivePlayerListener.S
     /** 移除本地活跃播放器监听器。 */
     fun unregisterActivePlayerListener(listener: ActivePlayerListener): Boolean =
         synchronized(positionLock) { listeners.remove(listener).also { updatePositionPoll() } }
+
+    /**
+     * 监听器的进度需求变化后调用。
+     *
+     * 立即唤醒正在等待的轮询循环，按新的需求切换高频/低频读取。
+     */
+    fun notifyPositionDemandChanged() {
+        demandSignal.trySend(Unit)
+    }
 
     /** 更新远端提供的播放进度共享内存；null 表示停止位置轮询。 */
     fun setPositionSharedMemory(memory: SharedMemory?) = synchronized(positionLock) {
@@ -161,6 +174,9 @@ internal class PlayerEventDispatcher(context: Context) : IActivePlayerListener.S
         } else if (positionJob?.isActive != true) {
             lastPosition = Long.MIN_VALUE
             positionJob = scope.launch { readPositions() }
+        } else {
+            // 监听者变化可能改变进度需求，唤醒循环重新评估。
+            demandSignal.trySend(Unit)
         }
     }
 
@@ -176,9 +192,26 @@ internal class PlayerEventDispatcher(context: Context) : IActivePlayerListener.S
             if (position != null) {
                 dispatch { it.onPositionChanged(position) }
             }
-            delay(POSITION_POLL_INTERVAL_MS)
+            // 歌词不可见时降频，只保留最新位置，避免无谓的主线程分发。
+            val interval = if (isHighFrequencyRequired()) {
+                POSITION_POLL_INTERVAL_MS
+            } else {
+                POSITION_POLL_INTERVAL_IDLE_MS
+            }
+            withTimeoutOrNull(interval) { demandSignal.receive() }
         }
     }
+
+    /** 任一监听器需要高频进度时返回 true；异常时按需要处理。 */
+    private fun isHighFrequencyRequired(): Boolean =
+        listeners.any { listener ->
+            try {
+                listener.isHighFrequencyPositionRequired()
+            } catch (e: Exception) {
+                Log.e(TAG, "Position demand check failed: " + listener.javaClass.name, e)
+                true
+            }
+        }
 
     /** 向所有监听器分发事件，隔离单个监听器的异常。 */
     private inline fun dispatch(crossinline block: (ActivePlayerListener) -> Unit) {
@@ -198,6 +231,11 @@ internal class PlayerEventDispatcher(context: Context) : IActivePlayerListener.S
 
     private companion object {
         private const val TAG = "PlayerEventDispatcher"
+
+        /** 歌词可见时的高频轮询间隔（约 20 Hz）。 */
         private const val POSITION_POLL_INTERVAL_MS = 50L
+
+        /** 歌词不可见时的低频轮询间隔，仅用于发现新歌词行。 */
+        private const val POSITION_POLL_INTERVAL_IDLE_MS = 250L
     }
 }

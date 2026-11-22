@@ -135,6 +135,7 @@
     <string name="item_logo_style_app_logo">应用图标</string>
     <string name="item_logo_style_cover_square">音乐封面（方形）</string>
     <string name="item_logo_style_cover_circle">音乐封面（圆形）</string>
+    <string name="item_logo_rotate_cover">封面旋转</string>
     <string name="item_logo_section_color">颜色</string>
     <string name="item_logo_custom_color">自定义颜色</string>
     <string name="item_logo_color_light">亮色模式颜色</string>
@@ -163,7 +164,7 @@
     <string name="item_base_width_color_os_capsule">宽度（流体云模式下）</string>
     <string name="item_floating_align">悬浮窗对齐方式</string>
     <string name="item_floating_control">悬浮歌词独立操作点</string>
-    <string name="item_floating_control_summary">歌词保持触摸穿透。悬浮歌词图标接收点击、长按和左右滑动，动作使用基础配置中的手势设置。</string>
+    <string name="item_floating_control_summary">在悬浮歌词图标上点击、长按或左右滑动。图标隐藏时，可在歌词中间操作。手势动作使用基础配置。</string>
     <string name="item_floating_align_center">居中对齐</string>
     <string name="item_floating_align_left">居左对齐</string>
     <string name="item_floating_base_lyric_style">悬浮窗基础配置</string>
@@ -344,4 +345,11 @@
     <string name="item_music_tags_default_app_summary">控制面板左侧按钮使用此应用打开当前歌曲的本地音频</string>
     <string name="option_music_tags_ask">每次询问</string>
     <string name="option_music_tags_unavailable">已选应用不可用，请重新选择</string>
+    <string name="immersive_favorite">收藏</string>
+    <string name="immersive_remove_favorite">取消收藏</string>
+    <string name="immersive_comments">评论</string>
+    <string name="immersive_review">乐评</string>
+    <string name="immersive_retranslate_short">重译</string>
+    <string name="immersive_retranslate_description">重新翻译当前歌词</string>
+    <string name="immersive_retranslating">翻译中</string>
 </resources>

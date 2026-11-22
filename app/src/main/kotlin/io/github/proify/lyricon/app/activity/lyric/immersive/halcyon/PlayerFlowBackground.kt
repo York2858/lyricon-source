@@ -7,7 +7,6 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
-import kotlinx.coroutines.delay
 
 @Composable
 internal fun rememberSharedFlowProgress(
@@ -28,9 +27,15 @@ internal fun rememberSharedFlowProgress(
             frameTimeNs = 0L
             return@LaunchedEffect
         }
+        val intervalNs = frameIntervalMs * 1_000_000L
+        var lastPublishedNs = 0L
         while (true) {
-            frameTimeNs = withFrameNanos { it }
-            if (frameIntervalMs > 0L) delay(frameIntervalMs)
+            val now = withFrameNanos { it }
+            // 按时间桶限帧：在 60/120 Hz 上都能稳定落在目标帧率附近。
+            if (intervalNs <= 0L || lastPublishedNs == 0L || now - lastPublishedNs >= intervalNs) {
+                frameTimeNs = now
+                lastPublishedNs = now
+            }
         }
     }
     if (!effectiveAnimate || frameTimeNs == 0L) return fallback

@@ -15,6 +15,7 @@ import io.github.proify.lyricon.common.util.safe
 import io.github.proify.lyricon.lyric.style.BasicStyle
 import io.github.proify.lyricon.lyric.style.LyricStyle
 import io.github.proify.lyricon.lyric.style.PackageStyle
+import io.github.proify.lyricon.lyric.style.TextStyle
 import io.github.proify.lyricon.xposed.ModuleEntry
 import io.github.proify.lyricon.xposed.systemui.SystemUIHooker
 import java.util.concurrent.atomic.AtomicBoolean
@@ -50,11 +51,51 @@ object LyricPrefs {
             if (key == AppBridge.MusicTagPrefs.KEY_DEFAULT_COMPONENT) return@OnSharedPreferenceChangeListener
             StatusBarViewManager.runOnMainThread {
                 if (key != BasicStyle.KEY_FLOATING_MODE && key != BasicStyle.KEY_LYRICS_ENABLED) {
-                    LyricViewController.applyConfigurationUpdate(getLyricStyle())
+                    scheduleConfigurationUpdate(key)
                 }
                 SystemUIHooker.applyLyricMode()
             }
         }
+
+    /** 需要重新加工歌词数据的偏好键；其余键只影响展示，直接复用已有数据。 */
+    private val dataProcessingKeys = setOf(
+        "lyric_style_base_blocked_words_regex",
+        "lyric_style_base_chinese_conversion_mode",
+        "ai_translation_google_fallback",
+        "ai_translation_google_url",
+        TextStyle.KEY_AI_TRANSLATION_ENABLED,
+        TextStyle.KEY_AI_TRANSLATION_TARGET_LANGUAGE,
+        TextStyle.KEY_AI_TRANSLATION_TARGET_LANGUAGE_CODE,
+        TextStyle.KEY_AI_TRANSLATION_PROMPT,
+        TextStyle.KEY_AI_TRANSLATION_IGNORE_CHINESE,
+        TextStyle.KEY_TEXT_TRANSLATION_ONLY,
+    )
+
+    /** 连续拖动滑块时合并配置更新，避免反复取消、重启加工流水线。 */
+    private const val CONFIG_UPDATE_DEBOUNCE_MS = 150L
+    private var pendingConfigUpdate = false
+    private var pendingDataProcessing = false
+
+    private val configUpdateTask = Runnable {
+        pendingConfigUpdate = false
+        val reprocessData = pendingDataProcessing
+        pendingDataProcessing = false
+        LyricViewController.applyConfigurationUpdate(
+            getLyricStyle(),
+            reprocessData = reprocessData
+        )
+    }
+
+    /** 合并 150 ms 内的配置变更；期间只要有一个数据键变化就重走加工。 */
+    private fun scheduleConfigurationUpdate(key: String?) {
+        if (key == null || key in dataProcessingKeys) pendingDataProcessing = true
+        if (pendingConfigUpdate) return
+        pendingConfigUpdate = true
+        StatusBarViewManager.mainHandler.postDelayed(
+            configUpdateTask,
+            CONFIG_UPDATE_DEBOUNCE_MS
+        )
+    }
 
     /* ---------------- base style ---------------- */
 

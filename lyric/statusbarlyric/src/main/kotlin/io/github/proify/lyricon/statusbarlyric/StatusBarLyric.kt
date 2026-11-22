@@ -191,11 +191,9 @@ class StatusBarLyric(
             Log.d(TAG, "休眠模式：$value")
             textView.animationsEnabled = !value
             logoView.animationsEnabled = !value
-            if (value) {
-                pendingSleepData = PendingData()
-            } else {
-                pendingSleepData?.let { seekTo(it.position) }
-                pendingSleepData = null
+            if (aggregatedVisible) {
+                if (!value) restoreDeferredPosition()
+                onPositionDemandChanged?.invoke()
             }
         }
 
@@ -206,12 +204,25 @@ class StatusBarLyric(
     private var isOplusCapsuleShowing: Boolean = false
 
     var onPlayingChanged: ((Boolean) -> Unit)? = null
+    val isPlaybackActive: Boolean get() = isPlaying
+
+    /**
+     * 歌词可见性变化导致进度需求变化时回调。
+     * 上层据此通知订阅端在高频/低频进度之间切换。
+     */
+    var onPositionDemandChanged: (() -> Unit)? = null
+
+    private var aggregatedVisible = false
+
+    /** 当前是否需要高频进度刷新（歌词实际可见且未休眠时）。 */
+    val isPositionTracking: Boolean get() = aggregatedVisible && !isSleepMode
 
     // 上一次 Logo gravity，用于避免重复重排
     private var lastLogoGravity: Int = -114
 
-    // 休眠期间缓存的进度数据
-    private var pendingSleepData: PendingData? = null
+    // 隐藏期间只保留最新进度，恢复显示时直接对齐。
+    private var deferredPosition: Long? = null
+    private var canTrackLyrics = false
 
     // --- 歌词内容与超时状态 ---
 
@@ -361,7 +372,8 @@ class StatusBarLyric(
 
         lastPlaying = playing
         isPlaying = playing
-        onPlayingChanged?.invoke(playing)
+        // 暂停后立即冻结逐帧特效，避免词间隙继续外推约 300 ms。
+        textView.playbackPaused = !playing
 
         // Playback and song callbacks arrive independently while skipping tracks.
         // Preserve the current frame across a transient pause instead of replaying the old song.
@@ -375,6 +387,7 @@ class StatusBarLyric(
 
         refreshLyricTimeoutState()
         updateVisibility()
+        onPlayingChanged?.invoke(playing)
     }
 
     fun isHideOnLockScreen() =
@@ -383,11 +396,10 @@ class StatusBarLyric(
     val enableEnterAnim get() = currentStyle.packageStyle.text.enableEnterAnim
     private var lastDisabledVisible: Boolean = false
     fun updateVisibility() {
-        val shouldShow = isPlaying
+        canTrackLyrics = isPlaying
                 && !isHideOnLockScreen()
-                && textView.shouldShow()
-                && !lyricTimedOut
                 && !isDisabledVisible
+        val shouldShow = canTrackLyrics && !lyricTimedOut && textView.shouldShow()
 
         if (shouldShow == isVisible) {
             return
@@ -426,21 +438,50 @@ class StatusBarLyric(
 
     fun seekTo(position: Long) {
         if (isSleepMode) {
-            pendingSleepData?.position = position
+            deferredPosition = position
             return
         }
 
+        deferredPosition = null
         textView.seekTo(position)
         refreshLyricTimeoutState()
     }
 
     fun setPosition(position: Long) {
-        if (isSleepMode) {
-            pendingSleepData?.position = position
+        if (isSleepMode || !canTrackLyrics || !isAttachedToWindow || windowVisibility != VISIBLE ||
+            (parent as? View)?.isShown != true
+        ) {
+            deferredPosition = position
             return
         }
 
-        textView.setPosition(position)
+        // A new timed line can make the view visible after an intro or a lyric timeout.
+        if (!isVisible && !textView.hasTimedLineChange(position)) {
+            deferredPosition = position
+            return
+        }
+
+        if (deferredPosition == null) {
+            textView.setPosition(position)
+        } else {
+            deferredPosition = position
+            restoreDeferredPosition()
+        }
+    }
+
+    override fun onVisibilityAggregated(isVisible: Boolean) {
+        super.onVisibilityAggregated(isVisible)
+        if (aggregatedVisible == isVisible) return
+        aggregatedVisible = isVisible
+        if (isSleepMode) return
+        if (isVisible) restoreDeferredPosition()
+        onPositionDemandChanged?.invoke()
+    }
+
+    private fun restoreDeferredPosition() {
+        val position = deferredPosition ?: return
+        deferredPosition = null
+        textView.seekTo(position)
     }
 
     fun updateDisplayTranslation(
@@ -756,7 +797,6 @@ class StatusBarLyric(
     private fun isLandScape(): Boolean =
         resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
-    private class PendingData(var position: Long = 0)
 
     private enum class LyricType {
         NONE, SONG, TEXT
