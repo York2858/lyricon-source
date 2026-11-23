@@ -17,7 +17,7 @@ import io.github.proify.lyricon.xposed.systemui.lyric.control.LyricControlPopup
 
 /** One action mapping shared by status bar lyrics and the floating control dot. */
 internal object LyricGestureActions {
-    fun dispatch(gesture: GestureType, anchor: View) {
+    fun dispatch(gesture: GestureType, anchor: View, allowControlPanel: Boolean = true) {
         if (!LyricPrefs.gestureEnabled) return
         val (key, default) = when (gesture) {
             GestureType.TAP -> LyricGesturePrefs.KEY_TAP to LyricGesturePrefs.DEFAULT_TAP
@@ -33,7 +33,8 @@ internal object LyricGestureActions {
                 LyricGesturePrefs.ACTION_TOGGLE_PLAY -> PlaybackControl.togglePlay()
                 LyricGesturePrefs.ACTION_PREVIOUS -> PlaybackControl.previous()
                 LyricGesturePrefs.ACTION_NEXT -> PlaybackControl.next()
-                LyricGesturePrefs.ACTION_OPEN_CONTROL -> LyricControlPopup.show(anchor)
+                LyricGesturePrefs.ACTION_OPEN_CONTROL ->
+                    if (allowControlPanel) LyricControlPopup.show(anchor)
                 LyricGesturePrefs.ACTION_OPEN_LYRICO_RECOGNITION -> LyricoRecognitionLauncher.launch(anchor.context)
                 LyricGesturePrefs.ACTION_SWITCH_LYRIC_MODE -> FloatingLyricController.toggleLyricDisplayMode()
                 LyricGesturePrefs.ACTION_TOGGLE_LYRICS -> anchor.context.sendBroadcast(

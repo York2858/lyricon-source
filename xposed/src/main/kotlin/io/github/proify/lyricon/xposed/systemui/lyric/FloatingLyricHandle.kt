@@ -39,7 +39,8 @@ internal class FloatingLyricHandle(
     override fun performClick(): Boolean {
         if (!canInteract()) return false
         super.performClick()
-        LyricGestureActions.dispatch(GestureType.TAP, this)
+        // 悬浮窗点击不再弹出媒体控制面板，避免误触
+        LyricGestureActions.dispatch(GestureType.TAP, this, allowControlPanel = false)
         return true
     }
 
