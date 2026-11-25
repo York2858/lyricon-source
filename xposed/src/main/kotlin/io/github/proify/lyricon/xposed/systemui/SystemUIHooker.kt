@@ -149,6 +149,7 @@ object SystemUIHooker : PackageHooker() {
         YLog.info(TAG, "onInit")
         val context = appContext ?: return
 
+        io.github.proify.lyricon.xposed.systemui.hook.CleartextHostPolicy.initialize(module)
         ScreenStateMonitor.initialize(context)
         // OplusMediaFavoriteHooker.initialize(module, classLoader) // 控制中心小卡片爱心暂不启用
         OplusLockscreenMediaFavoriteHooker.initialize(module, classLoader, context)

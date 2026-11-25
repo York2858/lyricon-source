@@ -63,6 +63,8 @@ data class BasicStyle(
     var isAiTranslationAutoIgnoreChinese: Boolean = false,
     var googleTranslationFallback: Boolean = true,
     var googleTranslationBaseUrl: String = "https://translate.googleapis.com/translate_a/single",
+    var bingTranslationFallback: Boolean = true,
+    var bingTranslationBaseUrl: String = "https://cn.bing.com",
 
     /* ---------------- 悬浮窗歌词 ---------------- */
 
@@ -234,6 +236,9 @@ data class BasicStyle(
         googleTranslationFallback = preferences.getBoolean("ai_translation_google_fallback", true)
         googleTranslationBaseUrl = preferences.getString("ai_translation_google_url", "https://translate.googleapis.com/translate_a/single")
             ?: "https://translate.googleapis.com/translate_a/single"
+        bingTranslationFallback = preferences.getBoolean("ai_translation_bing_fallback", true)
+        bingTranslationBaseUrl = preferences.getString("ai_translation_bing_url", "https://cn.bing.com")
+            ?: "https://cn.bing.com"
         isAiTranslationAutoIgnoreChinese =
             preferences.getBoolean(
                 KEY_AI_TRANSLATION_IGNORE_CHINESE,
@@ -279,6 +284,8 @@ data class BasicStyle(
 
         editor.putBoolean("ai_translation_google_fallback", googleTranslationFallback)
         editor.putString("ai_translation_google_url", googleTranslationBaseUrl)
+        editor.putBoolean("ai_translation_bing_fallback", bingTranslationFallback)
+        editor.putString("ai_translation_bing_url", bingTranslationBaseUrl)
         editor.putBoolean(KEY_AI_TRANSLATION_ENABLED, isAiTranslationEnable)
         editor.putString(KEY_AI_TRANSLATION_TARGET_LANGUAGE, aiTranslationTargetLanguage)
         editor.putString(KEY_AI_TRANSLATION_PROMPT, aiTranslationPrompt)

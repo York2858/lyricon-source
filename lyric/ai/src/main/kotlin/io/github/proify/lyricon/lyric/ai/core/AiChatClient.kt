@@ -143,7 +143,8 @@ object AiChatClient {
         userPrompt: String,
         onReasoning: (String) -> Unit = {},
         onContent: (String) -> Unit = {},
-        conversation: List<AiChatMessage> = emptyList()
+        conversation: List<AiChatMessage> = emptyList(),
+        jsonObject: Boolean = false
     ): AiChatStreamResult? = withContext(Dispatchers.IO) {
         val apiKey = configs.apiKey ?: return@withContext null
         val baseUrl = resolveBaseUrl(configs)
@@ -162,6 +163,9 @@ object AiChatClient {
             conversation.forEach { message ->
                 if (message.assistant) builder.addAssistantMessage(message.content)
                 else builder.addUserMessage(message.content)
+            }
+            if (jsonObject) {
+                builder.responseFormat(ResponseFormatJsonObject.builder().build())
             }
             val params = builder.build()
             Log.d(TAG, "Connecting to OpenAI compatible API: $baseUrl (stream=true)")

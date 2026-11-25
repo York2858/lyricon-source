@@ -14,6 +14,7 @@ import io.github.proify.lyricon.lyric.ai.core.AiConfig
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.xposed.systemui.ai.translate.AiTranslator.translateSongSync
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -37,6 +38,12 @@ object AiTranslator {
     private const val MAX_RUNNING_TRANSLATIONS = 2
     private const val MAX_PENDING_TRANSLATIONS = 2
 
+    /**
+     * AI 流式请求在这个时间内没有返回第一段正文（只有思考也算没有正文），
+     * 就先并行启动无密钥兜底并展示；AI 流不取消，之后成功仍以 AI 为准。
+     */
+    private const val AI_FIRST_CONTENT_TIMEOUT_MS = 10_000L
+
     private val cacheGeneration = AtomicInteger(0)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val cache = AiTranslationCache(
@@ -53,11 +60,17 @@ object AiTranslator {
         cache = cache,
         generation = cacheGeneration,
         maxRunning = MAX_RUNNING_TRANSLATIONS,
-        maxPending = MAX_PENDING_TRANSLATIONS
+        maxPending = MAX_PENDING_TRANSLATIONS,
+        streamingRequest = { config, options, song, lines, onHealth, onPartial ->
+            AiTranslationRequester.requestStreaming(config, options, song, lines, onHealth, onPartial)
+        }
     )
 
     private val googleScheduler = AiTranslationScheduler(cache, cacheGeneration, 2, 2,
         request = { _, options, song, texts -> AiTranslationRequester.requestGoogle(options, texts, song) }, engine = "google")
+
+    private val bingScheduler = AiTranslationScheduler(cache, cacheGeneration, 2, 2,
+        request = { _, options, song, texts -> AiTranslationRequester.requestBing(options, texts, song) }, engine = "bing")
 
     suspend fun recordOutcome(song: Song, status: String, reason: TranslationDiagnostic,
         configs: AiConfig? = null, options: AiTranslationOptions = AiTranslationOptions(), resolution: String = "",
@@ -112,7 +125,7 @@ object AiTranslator {
 
     fun clearCache(callback: () -> Unit) {
         Log.i(TAG, "Clearing all translation caches (Memory & DB)...")
-        scheduler.cancelAll(); googleScheduler.cancelAll()
+        scheduler.cancelAll(); googleScheduler.cancelAll(); bingScheduler.cancelAll()
         cache.clear(callback)
     }
 
@@ -149,22 +162,54 @@ object AiTranslator {
         val googleConfig = AiConfig(model = "Google Translate", baseUrl = options.googleBaseUrl)
         val googleOptions = options.copy(stylePrompt = null)
         val googleKey = "google:$songContentId:${configs.apiKey.orEmpty().md5()}:" + AiTranslationKey.calculate(googleConfig, googleOptions, song, originalLines)
-        if (forceRefresh) { scheduler.cancel(songContentId); googleScheduler.cancel(googleKey) }
+        val bingConfig = AiConfig(model = "Bing Translate", baseUrl = options.bingBaseUrl)
+        val bingOptions = options.copy(stylePrompt = null)
+        val bingKey = "bing:$songContentId:" + AiTranslationKey.calculate(bingConfig, bingOptions, song, originalLines)
+        if (forceRefresh) {
+            scheduler.cancel(songContentId); googleScheduler.cancel(googleKey); bingScheduler.cancel(bingKey)
+        }
         val cachedGoogle = if (options.googleFallback && !forceRefresh) (cache.getFromMemory(googleKey) ?: cache.getFromDb(googleKey))?.also {
             cache.enrichMetadata(googleKey, song, originalLines, googleConfig, googleOptions)
         } else null
-        val outcome = TranslationFallback.run(options.googleFallback,
-            ai = { scheduler.awaitTranslation(songContentId, configs, options, song, originalLines) },
-            google = { cachedGoogle ?: googleScheduler.awaitTranslation(googleKey, googleConfig, googleOptions, song, originalLines) },
-            onGoogleReady = { onProgress(AiTranslationApplicator.apply(song, it)) })
+        val cachedBing = if (options.bingFallback && !forceRefresh) (cache.getFromMemory(bingKey) ?: cache.getFromDb(bingKey))?.also {
+            cache.enrichMetadata(bingKey, song, originalLines, bingConfig, bingOptions)
+        } else null
+        val fallbackEngines: List<Pair<String, suspend () -> List<TranslationItem>?>> = buildList {
+            if (options.googleFallback) add("Google" to {
+                cachedGoogle ?: googleScheduler.awaitTranslation(googleKey, googleConfig, googleOptions, song, originalLines)
+            })
+            if (options.bingFallback) add("Bing" to {
+                cachedBing ?: bingScheduler.awaitTranslation(bingKey, bingConfig, bingOptions, song, originalLines)
+            })
+        }
+        val health = CompletableDeferred<Unit>()
+        val outcome = TranslationFallback.runHealthGated(
+            health = health,
+            ai = {
+                scheduler.awaitTranslation(
+                    key = songContentId,
+                    configs = configs,
+                    options = options,
+                    song = song,
+                    originalLines = originalLines,
+                    onHealth = { health.complete(Unit) },
+                    onPartial = { items -> onProgress(AiTranslationApplicator.apply(song, items)) }
+                )
+            },
+            fallbacks = fallbackEngines,
+            healthTimeoutMs = AI_FIRST_CONTENT_TIMEOUT_MS,
+            onFallbackReady = { onProgress(AiTranslationApplicator.apply(song, it)) }
+        )
         outcome.aiError?.let { aiError ->
-            val diagnostic = if (outcome.googleError == null) aiError else TranslationDiagnostic(
-                "AI_AND_GOOGLE", "AI：${aiError.reason}\nGoogle：${outcome.googleError.reason}",
-                "AI：${aiError.suggestion}\nGoogle：${outcome.googleError.suggestion}", aiError.httpStatus)
+            val diagnostic = if (outcome.fallbackError == null) aiError else TranslationDiagnostic(
+                "AI_AND_FALLBACK", "AI：${aiError.reason}\n无密钥兜底：${outcome.fallbackError.reason}",
+                "AI：${aiError.suggestion}\n兜底：${outcome.fallbackError.suggestion}", aiError.httpStatus)
             recordOutcome(song, "error", diagnostic, configs, options,
-                when { outcome.usedGoogle -> "Google 保底翻译成功，已显示补译结果"
-                    outcome.googleError != null -> "AI 与 Google 均失败，保留原歌词及已有译文"
-                    else -> "Google 同步翻译未开启，保留原歌词及已有译文" }, generation)
+                when {
+                    outcome.usedFallback -> "无密钥兜底翻译成功，已显示补译结果"
+                    outcome.fallbackError != null -> "AI 与无密钥兜底均失败，保留原歌词及已有译文"
+                    else -> "AI 未在限定时间内返回，无密钥兜底不可用"
+                }, generation)
         }
         return outcome.items?.let { AiTranslationApplicator.apply(song, it) } ?: song
     }

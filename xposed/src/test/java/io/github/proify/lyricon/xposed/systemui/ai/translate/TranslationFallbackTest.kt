@@ -87,4 +87,101 @@ class TranslationFallbackTest {
         withTimeout(2000) { aiStarted.await(); googleStarted.await(); running.cancelAndJoin() }
         assertTrue(aiCancelled.isCompleted); assertTrue(googleCancelled.isCompleted); assertEquals(0, previews)
     }
+
+    @Test fun answerBodyWithinTimeoutNeverStartsFallback() = runBlocking {
+        val health = CompletableDeferred<Unit>()
+        var fallbackCalls = 0
+        val running = async {
+            TranslationFallback.runHealthGated(
+                health = health,
+                ai = { health.await(); items },
+                fallbacks = listOf("Bing" to { fallbackCalls++; googleItems }),
+                healthTimeoutMs = 5000
+            )
+        }
+        health.complete(Unit)
+        val outcome = withTimeout(2000) { running.await() }
+        assertEquals(items, outcome.items)
+        assertTrue(outcome.aiHealthy)
+        assertFalse(outcome.usedFallback)
+        assertEquals(0, fallbackCalls)
+    }
+
+    @Test fun reasoningWithoutBodyStartsFallbackButLateAiStillWins() = runBlocking {
+        val fallbackStarted = CompletableDeferred<Unit>()
+        val releaseAi = CompletableDeferred<Unit>()
+        var preview: List<TranslationItem>? = null
+        val running = async {
+            TranslationFallback.runHealthGated(
+                health = CompletableDeferred(),
+                ai = { releaseAi.await(); items },
+                fallbacks = listOf("Bing" to { fallbackStarted.complete(Unit); googleItems }),
+                healthTimeoutMs = 50,
+                onFallbackReady = { preview = it }
+            )
+        }
+        withTimeout(2000) { fallbackStarted.await() }
+        withTimeout(2000) { while (preview == null) delay(10) }
+        assertEquals(googleItems, preview)
+        releaseAi.complete(Unit)
+        val outcome = withTimeout(2000) { running.await() }
+        assertEquals(items, outcome.items)
+        assertFalse(outcome.usedFallback)
+        assertNull(outcome.aiError)
+    }
+
+    @Test fun lateAiRecoveryCancelsARunningFallbackBeforeReturning() = runBlocking {
+        val fallbackStarted = CompletableDeferred<Unit>()
+        val fallbackCancelled = CompletableDeferred<Unit>()
+        val releaseAi = CompletableDeferred<Unit>()
+        val running = async {
+            TranslationFallback.runHealthGated(
+                health = CompletableDeferred(),
+                ai = { releaseAi.await(); items },
+                fallbacks = listOf("Bing" to {
+                    fallbackStarted.complete(Unit)
+                    try { awaitCancellation() } finally { fallbackCancelled.complete(Unit) }
+                }),
+                healthTimeoutMs = 50
+            )
+        }
+        withTimeout(2000) { fallbackStarted.await() }
+        releaseAi.complete(Unit)
+        val outcome = withTimeout(2000) { running.await() }
+        assertEquals(items, outcome.items)
+        assertTrue(fallbackCancelled.isCompleted)
+    }
+
+    @Test fun slowAiFailureKeepsTheFallbackResultAndDiagnostic() = runBlocking {
+        val failure = TranslationErrors.http(500)
+        val outcome = withTimeout(2000) {
+            TranslationFallback.runHealthGated(
+                health = CompletableDeferred(),
+                ai = { delay(150); throw TranslationFailure(failure) },
+                fallbacks = listOf("Bing" to { googleItems }),
+                healthTimeoutMs = 20
+            )
+        }
+        assertEquals(googleItems, outcome.items)
+        assertEquals(failure, outcome.aiError)
+        assertTrue(outcome.usedFallback)
+    }
+
+    @Test fun slowAiAndAllFallbacksFailRetainBothErrors() = runBlocking {
+        val ai = TranslationErrors.http(500)
+        val outcome = withTimeout(2000) {
+            TranslationFallback.runHealthGated(
+                health = CompletableDeferred(),
+                ai = { delay(100); throw TranslationFailure(ai) },
+                fallbacks = listOf("Bing" to {
+                    throw TranslationFailure(TranslationDiagnostic("BING", "Bing 失败", "稍后重试"))
+                }),
+                healthTimeoutMs = 20
+            )
+        }
+        assertNull(outcome.items)
+        assertEquals(ai, outcome.aiError)
+        assertNotNull(outcome.fallbackError)
+        assertFalse(outcome.usedFallback)
+    }
 }

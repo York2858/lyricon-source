@@ -74,6 +74,23 @@ class AiTranslationValidationTest {
         }
     }
 
+    @Test fun fallbackEnginesKeepChangedLinesAndLeaveUnchangedOnesOriginal() = runBlocking {
+        val lines = listOf("hello", "A")
+        val google = AiTranslationRequester.requestGoogle(options, lines) { _, _, _ -> """["你好","A"]""" }
+        assertEquals(listOf(TranslationItem(0, "你好")), google)
+        val bing = AiTranslationRequester.requestBing(options, lines) { _, _, _ -> listOf("你好", "A") }
+        assertEquals(listOf(TranslationItem(0, "你好")), bing)
+    }
+
+    @Test fun fallbackEngineWithOnlyUnchangedLinesStillFails() = runBlocking {
+        assertFailure("GOOGLE_UNCHANGED") {
+            AiTranslationRequester.requestGoogle(options, listOf("A")) { _, _, _ -> """["A"]""" }
+        }
+        assertFailure("BING_UNCHANGED") {
+            AiTranslationRequester.requestBing(options, listOf("A")) { _, _, _ -> listOf("A") }
+        }
+    }
+
     @Test fun invalidAiOutputUsesValidGoogleFallback() = runBlocking {
         val result = TranslationFallback.run(true,
             ai = { AiTranslationRequester.request(config, options, texts = listOf("hello")) { _, _, _ ->

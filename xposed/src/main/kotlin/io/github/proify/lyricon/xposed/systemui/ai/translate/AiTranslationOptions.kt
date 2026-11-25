@@ -19,5 +19,7 @@ data class AiTranslationOptions(
     val targetLanguage: String? = null,
     val stylePrompt: String? = null,
     val googleFallback: Boolean = true,
-    val googleBaseUrl: String = "https://translate.googleapis.com/translate_a/single"
+    val googleBaseUrl: String = "https://translate.googleapis.com/translate_a/single",
+    val bingFallback: Boolean = true,
+    val bingBaseUrl: String = io.github.proify.lyricon.lyric.ai.translate.BingLyricsTranslator.DEFAULT_URL
 )

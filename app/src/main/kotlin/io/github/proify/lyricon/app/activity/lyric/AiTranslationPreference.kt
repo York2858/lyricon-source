@@ -47,6 +47,7 @@ import io.github.proify.lyricon.app.compose.preference.rememberBooleanPreference
 import io.github.proify.lyricon.app.compose.preference.rememberStringPreference
 import io.github.proify.lyricon.common.PackageNames
 import io.github.proify.lyricon.lyric.style.TextStyle
+import io.github.proify.lyricon.lyric.ai.translate.BingLyricsTranslator
 import io.github.proify.lyricon.lyric.ai.translate.GoogleLyricsTranslator
 import io.github.proify.lyricon.lyric.ai.translate.TranslationErrors
 import kotlinx.coroutines.CancellationException
@@ -110,6 +111,9 @@ fun AiTranslationPreference(preferences: SharedPreferences) {
     var googleFallback by rememberBooleanPreference(preferences, "ai_translation_google_fallback", true)
     SwitchPreference(checked = googleFallback, onCheckedChange = { googleFallback = it },
         title = "Google 同步翻译（AI 优先）", startAction = { IconActions(painterResource(R.drawable.translate_24px)) })
+    var bingFallback by rememberBooleanPreference(preferences, "ai_translation_bing_fallback", true)
+    SwitchPreference(checked = bingFallback, onCheckedChange = { bingFallback = it },
+        title = "Bing 同步翻译（免密钥，国内可用）", startAction = { IconActions(painterResource(R.drawable.translate_24px)) })
     TranslationTargetLanguagePreference(preferences)
 
     val context = LocalContext.current
@@ -128,6 +132,12 @@ fun AiTranslationPreference(preferences: SharedPreferences) {
         val googleUrl by rememberStringPreference(preferences, "ai_translation_google_url", GoogleLyricsTranslator.DEFAULT_URL)
         val language by rememberStringPreference(preferences, TextStyle.KEY_AI_TRANSLATION_TARGET_LANGUAGE)
         key(googleUrl, language) { GoogleTranslationPing(googleUrl.orEmpty(), language) }
+        StringInputPreference(preferences = preferences, key = "ai_translation_bing_url",
+            title = "Bing 翻译接口", dialogSummary = "默认使用 cn.bing.com 的免密钥网页接口，国内网络可直接访问。",
+            defaultValue = BingLyricsTranslator.DEFAULT_URL,
+            startAction = { IconActions(painterResource(R.drawable.translate_24px)) })
+        val bingUrl by rememberStringPreference(preferences, "ai_translation_bing_url", BingLyricsTranslator.DEFAULT_URL)
+        key(bingUrl, language) { BingTranslationPing(bingUrl.orEmpty(), language) }
         StringInputPreference(
             preferences = preferences,
             key = TextStyle.KEY_AI_TRANSLATION_PROMPT,
@@ -173,6 +183,42 @@ private fun GoogleTranslationPing(url: String, language: String?) {
                 }
             })
         if (testing) Text("正在请求当前接口，最多等待 15 秒", color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+        result?.let { Text(it, color = if (succeeded) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantSummary) }
+    }
+}
+
+@Composable
+private fun BingTranslationPing(url: String, language: String?) {
+    val scope = rememberCoroutineScope()
+    var testing by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<String?>(null) }
+    var succeeded by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        TextButton(text = if (testing) "正在测试…" else "Ping Bing 翻译", enabled = !testing,
+            modifier = Modifier.fillMaxWidth(), onClick = {
+                if (!testing) {
+                    testing = true; result = null; succeeded = false
+                    scope.launch {
+                        val started = SystemClock.elapsedRealtime()
+                        try {
+                            val translated = withTimeout(20000) {
+                                BingLyricsTranslator.translate(listOf("Hello"), language, url)
+                            }.single()
+                            succeeded = true
+                            result = "接口可用 · ${SystemClock.elapsedRealtime() - started} ms\nHello → $translated"
+                        } catch (_: TimeoutCancellationException) {
+                            result = "测试超时 · 20 秒\n请检查网络或 Bing 接口地址。"
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            val diagnostic = TranslationErrors.from(e)
+                            result = "测试失败 · ${SystemClock.elapsedRealtime() - started} ms\n${diagnostic.reason}\n${diagnostic.suggestion}"
+                        } finally { testing = false }
+                    }
+                }
+            })
+        if (testing) Text("正在请求当前接口，最多等待 20 秒", color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
         result?.let { Text(it, color = if (succeeded) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantSummary) }
     }
 }

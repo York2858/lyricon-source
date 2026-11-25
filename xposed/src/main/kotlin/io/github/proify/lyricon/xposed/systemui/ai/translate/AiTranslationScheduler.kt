@@ -21,6 +21,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicInteger
 
 /** Bounded scheduler: deduplicates active callers and cancels work with no remaining waiters. */
@@ -31,7 +32,13 @@ internal class AiTranslationScheduler(
     private val maxPending: Int,
     private val request: suspend (AiConfig, AiTranslationOptions, Song, List<String>) -> List<TranslationItem>? =
         { config, options, song, lines -> AiTranslationRequester.request(config, options, song, lines) },
-    private val engine: String = "ai"
+    private val engine: String = "ai",
+    /** 流式请求：第一段正文回调视为健康信号（思考不算），闭合的译文行通过 onPartial 增量发布。 */
+    private val streamingRequest: (suspend (
+        AiConfig, AiTranslationOptions, Song, List<String>,
+        onHealth: () -> Unit,
+        onPartial: (List<TranslationItem>) -> Unit
+    ) -> List<TranslationItem>?)? = null
 ) {
     private companion object {
         const val TAG = "LyriconAiTranslator"
@@ -49,7 +56,9 @@ internal class AiTranslationScheduler(
         configs: AiConfig,
         options: AiTranslationOptions,
         song: Song,
-        originalLines: List<String>
+        originalLines: List<String>,
+        onHealth: (() -> Unit)? = null,
+        onPartial: ((List<TranslationItem>) -> Unit)? = null
     ): List<TranslationItem>? {
         val job = synchronized(lock) {
             jobs[key]?.also { it.waiters++ } ?: TranslationJob(
@@ -68,9 +77,22 @@ internal class AiTranslationScheduler(
                 dispatchNextLocked()
             }
         }
+        val healthWatcher = onHealth?.let { callback ->
+            scope.launch {
+                try {
+                    job.health.await()
+                    callback()
+                } catch (_: CancellationException) {
+                    // The caller finished or the job was cancelled.
+                }
+            }
+        }
+        onPartial?.let { job.partialListeners.add(it) }
         return try {
             job.deferred.await()
         } finally {
+            healthWatcher?.cancel()
+            onPartial?.let { job.partialListeners.remove(it) }
             synchronized(lock) {
                 job.waiters--
                 if (job.waiters == 0 && !job.deferred.isCompleted) cancelLocked(job)
@@ -121,8 +143,18 @@ internal class AiTranslationScheduler(
 
     private suspend fun runJob(job: TranslationJob) {
         try {
-            val results = request(job.configs, job.options, job.song, job.originalLines)
+            val stream = streamingRequest
+            val results = if (stream != null) {
+                stream(
+                    job.configs, job.options, job.song, job.originalLines,
+                    { job.health.complete(Unit) },
+                    { items -> job.partialListeners.forEach { runCatching { it(items) } } }
+                )
+            } else {
+                request(job.configs, job.options, job.song, job.originalLines)
+            }
             currentCoroutineContext().ensureActive()
+            if (!results.isNullOrEmpty()) job.health.complete(Unit)
             val current = job.generation == generation.get()
             if (!results.isNullOrEmpty() && current) {
                 cache.saveToDb(job.key, results, job.song, job.originalLines,
@@ -147,6 +179,8 @@ internal class AiTranslationScheduler(
         val originalLines: List<String>,
         val generation: Int,
         val deferred: CompletableDeferred<List<TranslationItem>?> = CompletableDeferred(),
+        val health: CompletableDeferred<Unit> = CompletableDeferred(),
+        val partialListeners: MutableSet<(List<TranslationItem>) -> Unit> = CopyOnWriteArraySet(),
         var state: TranslationJobState = TranslationJobState.PENDING,
         var waiters: Int = 0,
         var worker: Job? = null

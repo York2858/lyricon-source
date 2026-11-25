@@ -82,7 +82,8 @@ class AiTranslationPostProcessor(
     suspend fun process(song: Song, style: LyricStyle, force: Boolean, onProgress: (Song) -> Unit): Song {
         val settings = style.basicStyle
         val translationOptions = AiTranslationOptions(settings.aiTranslationTargetLanguage, settings.aiTranslationPrompt,
-            settings.googleTranslationFallback, settings.googleTranslationBaseUrl)
+            settings.googleTranslationFallback, settings.googleTranslationBaseUrl,
+            settings.bingTranslationFallback, settings.bingTranslationBaseUrl)
         suspend fun skipped(code: String, reason: String, advice: String): Song {
             AiTranslator.recordOutcome(song, "skipped", TranslationDiagnostic(code, reason, advice), options = translationOptions)
             return song

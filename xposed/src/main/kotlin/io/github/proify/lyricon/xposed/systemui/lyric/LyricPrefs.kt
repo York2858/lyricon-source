@@ -63,6 +63,8 @@ object LyricPrefs {
         "lyric_style_base_chinese_conversion_mode",
         "ai_translation_google_fallback",
         "ai_translation_google_url",
+        "ai_translation_bing_fallback",
+        "ai_translation_bing_url",
         TextStyle.KEY_AI_TRANSLATION_ENABLED,
         TextStyle.KEY_AI_TRANSLATION_TARGET_LANGUAGE,
         TextStyle.KEY_AI_TRANSLATION_TARGET_LANGUAGE_CODE,
